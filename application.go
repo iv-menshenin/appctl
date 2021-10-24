@@ -26,10 +26,10 @@ type (
 )
 
 const (
-	appStateInit     int32 = 0
-	appStateRunning  int32 = 1
-	appStateHoldOn   int32 = 2
-	appStateShutdown int32 = 4
+	appStateInit int32 = iota
+	appStateRunning
+	appStateHoldOn
+	appStateShutdown
 )
 
 func (a *Application) init() error {
