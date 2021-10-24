@@ -30,7 +30,11 @@ func appStart(ctx context.Context, holdOn <-chan struct{}) error {
 				w.WriteHeader(http.StatusServiceUnavailable)
 			default:
 				<-time.After(time.Second * 7)
+				w.Header().Add("Content-Type", "text/plain")
 				w.WriteHeader(http.StatusOK)
+				if _, err := w.Write([]byte("hello world")); err != nil {
+					logError(err)
+				}
 			}
 		}),
 		ReadTimeout:       time.Millisecond * 250,
