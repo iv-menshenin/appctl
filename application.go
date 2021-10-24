@@ -21,9 +21,6 @@ type (
 		done     chan struct{}
 	}
 	AppContext struct{}
-	State      interface {
-	}
-	InitFunc func() error
 )
 
 const (
