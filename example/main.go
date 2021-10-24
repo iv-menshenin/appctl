@@ -18,7 +18,7 @@ func logError(err error) {
 	}
 }
 
-func appStart(ctx context.Context, holdOn <-chan struct{}) {
+func appStart(ctx context.Context, holdOn <-chan struct{}) error {
 	var wg sync.WaitGroup
 	var httpServer = http.Server{
 		Addr: ":8900",
@@ -53,8 +53,9 @@ func appStart(ctx context.Context, holdOn <-chan struct{}) {
 		}
 	}()
 	if err := httpServer.ListenAndServe(); err != http.ErrServerClosed {
-		logError(err)
+		return err
 	}
+	return nil
 }
 
 func main() {

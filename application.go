@@ -2,6 +2,8 @@ package appctl
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"sync/atomic"
@@ -11,7 +13,7 @@ import (
 
 type (
 	Application struct {
-		MainFunc              func(ctx context.Context, holdOn <-chan struct{})
+		MainFunc              func(ctx context.Context, holdOn <-chan struct{}) error
 		InitFunc              func(ctx context.Context) error
 		TerminationTimeout    time.Duration
 		InitializationTimeout time.Duration
@@ -48,16 +50,37 @@ func (a *Application) init() error {
 }
 
 func (a *Application) run(sig <-chan os.Signal) error {
+	var errCh = make(chan error, 3)
 	go func() {
-		a.MainFunc(a, a.holdOn)
+		defer func() {
+			r := recover()
+			if r != nil {
+				errCh <- fmt.Errorf("unhandled panic: %v", r)
+			}
+		}()
+		if err := a.MainFunc(a, a.holdOn); err != nil {
+			errCh <- err
+		}
 		a.Shutdown()
 	}()
 	go func() {
 		<-sig // wait for os signal
 		a.HoldOn()
 		<-time.After(a.TerminationTimeout)
+		a.Shutdown()
 	}()
-	<-a.done
+	go func() {
+		<-a.done
+		errCh <- io.EOF
+	}()
+	select {
+	case err, ok := <-errCh:
+		if ok && err != io.EOF {
+			return err
+		}
+	case <-a.done:
+		// normal exit
+	}
 	return nil
 }
 

@@ -164,10 +164,11 @@ func TestApplication_Run(t *testing.T) {
 				t.Error("wrong app state")
 				return nil
 			},
-			MainFunc: func(ctx context.Context, holdOn <-chan struct{}) {
+			MainFunc: func(ctx context.Context, holdOn <-chan struct{}) error {
 				if state != "running checked" {
 					t.Error("wrong stage on mainfunc")
 				}
+				return nil
 			},
 		}
 		if err := a.Run(); err != nil {
@@ -190,8 +191,9 @@ func TestApplication_Run(t *testing.T) {
 				result = true
 				return nil
 			},
-			MainFunc: func(ctx context.Context, holdOn <-chan struct{}) {
+			MainFunc: func(ctx context.Context, holdOn <-chan struct{}) error {
 				result = true
+				return nil
 			},
 		}
 		if err := a.Run(); err != ErrWrongState {
@@ -211,8 +213,9 @@ func TestApplication_Run(t *testing.T) {
 			InitFunc: func(ctx context.Context) error {
 				return eee
 			},
-			MainFunc: func(ctx context.Context, holdOn <-chan struct{}) {
+			MainFunc: func(ctx context.Context, holdOn <-chan struct{}) error {
 				result = true
+				return nil
 			},
 		}
 		if err := a.Run(); err != eee {
@@ -249,8 +252,9 @@ func TestApplication_Shutdown(t *testing.T) {
 		{
 			name: "implicit shutdown",
 			app: Application{
-				MainFunc: func(ctx context.Context, holdOn <-chan struct{}) {
+				MainFunc: func(ctx context.Context, holdOn <-chan struct{}) error {
 					// exit with Shutdown automatic call
+					return nil
 				},
 			},
 			needError: nil,
@@ -259,12 +263,13 @@ func TestApplication_Shutdown(t *testing.T) {
 		{
 			name: "shutdown after holding on",
 			app: Application{
-				MainFunc: func(ctx context.Context, holdOn <-chan struct{}) {
+				MainFunc: func(ctx context.Context, holdOn <-chan struct{}) error {
 					go func() {
 						<-time.After(time.Millisecond * 5)
 						ctx.Value(AppContext{}).(*Application).HoldOn()
 					}()
 					<-holdOn
+					return nil
 				},
 			},
 			needError: nil,
@@ -273,12 +278,13 @@ func TestApplication_Shutdown(t *testing.T) {
 		{
 			name: "explicit shutdown",
 			app: Application{
-				MainFunc: func(ctx context.Context, holdOn <-chan struct{}) {
+				MainFunc: func(ctx context.Context, holdOn <-chan struct{}) error {
 					go func() {
 						<-time.After(time.Millisecond * 5)
 						ctx.Value(AppContext{}).(*Application).Shutdown()
 					}()
 					<-holdOn
+					return nil
 				},
 			},
 			needError: nil,
@@ -307,10 +313,11 @@ func TestApplication_Shutdown(t *testing.T) {
 				result = true
 				return errors.New("test error")
 			},
-			MainFunc: func(ctx context.Context, holdOn <-chan struct{}) {
+			MainFunc: func(ctx context.Context, holdOn <-chan struct{}) error {
 				result = true
 				<-holdOn
 				t.Error(errors.New("test error"))
+				return nil
 			},
 		}
 		a.Shutdown()
@@ -336,10 +343,11 @@ func TestApplication_Shutdown(t *testing.T) {
 				result = true
 				return errors.New("test error")
 			},
-			MainFunc: func(ctx context.Context, holdOn <-chan struct{}) {
+			MainFunc: func(ctx context.Context, holdOn <-chan struct{}) error {
 				result = true
 				<-holdOn
 				t.Error(errors.New("test error"))
+				return nil
 			},
 		}
 		a.Shutdown()
@@ -368,10 +376,11 @@ func TestApplication_Value(t *testing.T) {
 			}
 			return nil
 		},
-		MainFunc: func(ctx context.Context, holdOn <-chan struct{}) {
+		MainFunc: func(ctx context.Context, holdOn <-chan struct{}) error {
 			if _, ok := ctx.Value(AppContext{}).(*Application); !ok {
 				t.Error("wrong context")
 			}
+			return nil
 		},
 	}
 	if err := a.Run(); err != nil {
@@ -443,10 +452,12 @@ func TestApplication_run(t *testing.T) {
 			appState: appStateRunning,
 			holdOn:   make(chan struct{}),
 			done:     make(chan struct{}),
-			MainFunc: func(ctx context.Context, holdOn <-chan struct{}) {
+			MainFunc: func(ctx context.Context, holdOn <-chan struct{}) error {
 				<-holdOn
 				atomic.CompareAndSwapInt32(&status, 1, 2)
+				return nil
 			},
+			TerminationTimeout: time.Millisecond * 500,
 		}
 		var sig = make(chan os.Signal)
 		go func() {
@@ -474,15 +485,55 @@ func TestApplication_run(t *testing.T) {
 			t.Error("unexpected exit")
 		}
 	})
+	t.Run("exit by SIGINT and timeout", func(t *testing.T) {
+		var status int32
+		var a = Application{
+			appState: appStateRunning,
+			holdOn:   make(chan struct{}),
+			done:     make(chan struct{}),
+			MainFunc: func(ctx context.Context, holdOn <-chan struct{}) error {
+				<-time.After(time.Second * 30)
+				atomic.CompareAndSwapInt32(&status, 0, 2) // never happens
+				return nil
+			},
+			TerminationTimeout: time.Millisecond * 10,
+		}
+		var sig = make(chan os.Signal)
+		go func() {
+			<-time.After(time.Millisecond * 5)
+			sig <- syscall.SIGINT
+		}()
+		go func() {
+			<-time.After(time.Millisecond * 500)
+			select {
+			case <-a.holdOn:
+				return
+			case <-a.done:
+				return
+			default:
+				t.Error("test timeout")
+				close(a.holdOn)
+				close(a.done)
+			}
+		}()
+		if err := a.run(sig); err != nil {
+			t.Error(err)
+		}
+		if atomic.LoadInt32(&status) != 0 {
+			t.Error("unexpected exit")
+		}
+	})
 	t.Run("exit by main", func(t *testing.T) {
 		var status int32
 		var a = Application{
 			appState: appStateRunning,
 			holdOn:   make(chan struct{}),
 			done:     make(chan struct{}),
-			MainFunc: func(ctx context.Context, holdOn <-chan struct{}) {
+			MainFunc: func(ctx context.Context, holdOn <-chan struct{}) error {
 				atomic.CompareAndSwapInt32(&status, 0, 1)
+				return nil
 			},
+			TerminationTimeout: time.Millisecond * 500,
 		}
 		var sig = make(chan os.Signal)
 		go func() {
