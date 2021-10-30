@@ -27,6 +27,7 @@ type (
 
 const (
 	appStateInit int32 = iota
+	appStateReady
 	appStateRunning
 	appStateHoldOn
 	appStateShutdown
@@ -76,6 +77,7 @@ func (a *Application) run(sig <-chan os.Signal) error {
 	select {
 	case err, ok := <-errCh:
 		if ok && err != io.EOF {
+			a.Shutdown()
 			return err
 		}
 	case <-a.done:

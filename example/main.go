@@ -18,9 +18,15 @@ func logError(err error) {
 	}
 }
 
-func appStart(ctx context.Context, holdOn <-chan struct{}) error {
+// https://opendata.trudvsem.ru/api/v1/vacancies?text=%D0%BF%D1%80%D0%BE%D0%B3%D1%80%D0%B0%D0%BC%D0%BC%D0%B8%D1%81%D1%82&offset=0&limit=1&modifiedFrom=2021-10-24T00:00:00Z
+
+type server struct {
+	server http.Server
+}
+
+func (s *server) appStart(ctx context.Context, holdOn <-chan struct{}) error {
 	var wg sync.WaitGroup
-	var httpServer = http.Server{
+	s.server = http.Server{
 		Addr: ":8900",
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			wg.Add(1)
@@ -52,19 +58,24 @@ func appStart(ctx context.Context, holdOn <-chan struct{}) error {
 	go func() {
 		<-holdOn
 		wg.Wait()
-		if err := httpServer.Close(); err != nil {
+		if err := s.server.Close(); err != nil {
 			logError(err)
 		}
 	}()
-	if err := httpServer.ListenAndServe(); err != http.ErrServerClosed {
+	if err := s.server.ListenAndServe(); err != http.ErrServerClosed {
 		return err
 	}
 	return nil
 }
 
 func main() {
+	var srv server
+	var svc = appctl.ServiceController{
+		Services: []appctl.Service{},
+	}
 	var app = appctl.Application{
-		MainFunc:           appStart,
+		MainFunc:           srv.appStart,
+		InitFunc:           svc.Init,
 		TerminationTimeout: time.Minute,
 	}
 	if err := app.Run(); err != nil {
