@@ -554,4 +554,66 @@ func TestApplication_run(t *testing.T) {
 			t.Error("unexpected exit")
 		}
 	})
+	t.Run("exit by error", func(t *testing.T) {
+		var status int32
+		var a = Application{
+			appState: appStateRunning,
+			holdOn:   make(chan struct{}),
+			done:     make(chan struct{}),
+			MainFunc: func(ctx context.Context, holdOn <-chan struct{}) error {
+				atomic.CompareAndSwapInt32(&status, 0, 1)
+				return errors.New("error")
+			},
+			TerminationTimeout: time.Millisecond * 500,
+		}
+		var sig = make(chan os.Signal)
+		go func() {
+			<-time.After(time.Millisecond * 100)
+			select {
+			case <-a.done:
+				return
+			default:
+				t.Error("timeout")
+				close(a.holdOn)
+				close(a.done)
+			}
+		}()
+		if err := a.run(sig); err == nil {
+			t.Error("expected error here")
+		}
+		if atomic.LoadInt32(&status) != 1 {
+			t.Error("unexpected exit")
+		}
+	})
+	t.Run("exit by panic", func(t *testing.T) {
+		var status int32
+		var a = Application{
+			appState: appStateRunning,
+			holdOn:   make(chan struct{}),
+			done:     make(chan struct{}),
+			MainFunc: func(ctx context.Context, holdOn <-chan struct{}) error {
+				atomic.CompareAndSwapInt32(&status, 0, 1)
+				panic(errors.New("error"))
+			},
+			TerminationTimeout: time.Millisecond * 500,
+		}
+		var sig = make(chan os.Signal)
+		go func() {
+			<-time.After(time.Millisecond * 100)
+			select {
+			case <-a.done:
+				return
+			default:
+				t.Error("timeout")
+				close(a.holdOn)
+				close(a.done)
+			}
+		}()
+		if err := a.run(sig); err == nil {
+			t.Error("expected error here")
+		}
+		if atomic.LoadInt32(&status) != 1 {
+			t.Error("unexpected exit")
+		}
+	})
 }
