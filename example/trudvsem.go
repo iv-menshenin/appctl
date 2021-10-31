@@ -14,7 +14,10 @@ import (
 	"time"
 )
 
-const serviceURL = "https://opendata.trudvsem.ru/api/v1/vacancies"
+const (
+	serviceURL    = "https://opendata.trudvsem.ru/api/v1/vacancies"
+	prefetchCount = 25
+)
 
 type (
 	trudVsem struct {
@@ -116,7 +119,7 @@ func (t *trudVsem) parseResponseData(resp *http.Response) error {
 func (t *trudVsem) Init(context.Context) error {
 	rand.Seed(time.Now().UnixNano())
 	t.mux.Lock()
-	t.vacancies = make([]Vacancy, 0, 10)
+	t.vacancies = make([]Vacancy, 0, prefetchCount)
 	t.mux.Unlock()
 	return nil
 }
@@ -134,7 +137,7 @@ func (t *trudVsem) Close() error {
 }
 
 func (t *trudVsem) refresh() {
-	if err := t.getData(context.Background(), "программист", 0, 10); err != nil {
+	if err := t.getData(context.Background(), "golang", 0, prefetchCount); err != nil {
 		log.Println(err)
 	}
 }
