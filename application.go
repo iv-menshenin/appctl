@@ -68,12 +68,11 @@ func (a *Application) run(sig <-chan os.Signal) error {
 	go func() {
 		<-sig // wait for os signal
 		a.HoldOn()
+		// In this mode, the main thread should stop accepting new requests, terminate all current requests, and exit.
+		// Exiting the procedure of the main thread will lead to an implicit call Shutdown(),
+		// if this does not happen, we will make an explicit call through the shutdown timeout
 		<-time.After(a.TerminationTimeout)
 		a.Shutdown()
-	}()
-	go func() {
-		<-a.done
-		errCh <- io.EOF
 	}()
 	select {
 	case err, ok := <-errCh:
