@@ -48,7 +48,7 @@ func (s *server) getVacancy() ([]byte, error) {
 		if _, err := w.WriteString(fmt.Sprintf("<p class='salary'>зарплата %0.2f руб.</p>", vacancy.SalaryMax)); err != nil {
 			return nil, err
 		}
-	} else {
+	} else if vacancy.SalaryMin > 0 {
 		if _, err := w.WriteString(fmt.Sprintf("<p class='salary'>зарплата %0.2f руб.</p>", vacancy.SalaryMin)); err != nil {
 			return nil, err
 		}
