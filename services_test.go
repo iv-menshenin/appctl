@@ -15,12 +15,16 @@ type (
 		passedInit   bool
 		passedPing   bool
 		passedClose  bool
+		throttling   time.Duration
 	}
 )
 
 func (d *dummyService) Init(ctx context.Context) error {
 	if d.brokeOnInit {
 		return errors.New("bang")
+	}
+	if d.throttling > 0 {
+		<-time.After(d.throttling)
 	}
 	select {
 	case <-ctx.Done():
@@ -35,6 +39,9 @@ func (d *dummyService) Ping(ctx context.Context) error {
 	if d.brokeOnPing {
 		return errors.New("bang")
 	}
+	if d.throttling > 0 {
+		<-time.After(d.throttling)
+	}
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
@@ -47,6 +54,9 @@ func (d *dummyService) Ping(ctx context.Context) error {
 func (d *dummyService) Close() error {
 	if d.brokeOnClose {
 		return errors.New("bang")
+	}
+	if d.throttling > 0 {
+		<-time.After(d.throttling)
 	}
 	d.passedClose = true
 	return nil
@@ -156,6 +166,60 @@ func TestServiceController_Init(t *testing.T) {
 				if err = tt.check(s); err != nil {
 					t.Error(err)
 				}
+			}
+		})
+	}
+}
+
+func TestServiceController_initAllServices(t *testing.T) {
+	type fields struct {
+		Services []Service
+	}
+	type args struct {
+		ctx context.Context
+	}
+	tests := []struct {
+		name    string
+		fields  fields
+		args    args
+		wantErr bool
+	}{
+		{
+			name:    "empty",
+			fields:  fields{},
+			args:    args{ctx: context.TODO()},
+			wantErr: false,
+		},
+		{
+			name: "with dummy services",
+			fields: fields{
+				Services: []Service{
+					&dummyService{brokeOnClose: true, brokeOnPing: true},
+					&dummyService{brokeOnClose: true, brokeOnPing: true},
+				},
+			},
+			args:    args{ctx: context.TODO()},
+			wantErr: false,
+		},
+		{
+			name: "with broken service",
+			fields: fields{
+				Services: []Service{
+					&dummyService{},
+					&dummyService{brokeOnInit: true},
+				},
+			},
+			args:    args{ctx: context.TODO()},
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &ServiceController{
+				Services: tt.fields.Services,
+			}
+			if err := s.Init(tt.args.ctx); (err != nil) != tt.wantErr {
+				t.Errorf("Init() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}
@@ -361,12 +425,94 @@ func TestServiceController_checkState(t *testing.T) {
 }
 
 func TestServiceController_cycleTestServices(t *testing.T) {
+	t.Run("broken ping", func(t *testing.T) {
+		s := &ServiceController{
+			Services: []Service{
+				&dummyService{brokeOnPing: true},
+			},
+			PingPeriod:  time.Millisecond,
+			PingTimeout: time.Millisecond * 5,
+			stop:        make(chan struct{}),
+			state:       appStateRunning,
+		}
+		err := s.cycleTestServices(context.Background())
+		if err == nil {
+			t.Error("want error")
+		}
+	})
+	t.Run("context cancellation", func(t *testing.T) {
+		s := &ServiceController{
+			Services:    []Service{},
+			PingPeriod:  time.Millisecond,
+			PingTimeout: time.Millisecond * 5,
+			stop:        make(chan struct{}),
+			state:       appStateRunning,
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		var errCh = make(chan error)
+		go func(ctx context.Context) {
+			defer close(errCh)
+			err := s.cycleTestServices(ctx)
+			if err != nil {
+				errCh <- err
+			}
+		}(ctx)
+		select {
+		case err, ok := <-errCh:
+			if ok {
+				t.Error(err)
+			} else {
+				t.Error("some unexpected")
+			}
+			cancel()
+		default:
+			cancel()
+			<-time.After(time.Millisecond * 10)
+		}
+		err, ok := <-errCh
+		if !ok || err != context.Canceled {
+			t.Error("error expected")
+		}
+	})
+	t.Run("service stopped", func(t *testing.T) {
+		s := &ServiceController{
+			Services:    []Service{},
+			PingPeriod:  time.Millisecond,
+			PingTimeout: time.Millisecond * 5,
+			stop:        make(chan struct{}),
+			state:       appStateRunning,
+		}
+		var errCh = make(chan error)
+		go func() {
+			defer close(errCh)
+			err := s.cycleTestServices(context.Background())
+			if err != nil {
+				errCh <- err
+			}
+		}()
+		select {
+		case err, ok := <-errCh:
+			if ok {
+				t.Error(err)
+			} else {
+				t.Error("some unexpected")
+			}
+			s.Stop()
+		default:
+			<-time.After(time.Millisecond * 10)
+			s.Stop()
+		}
+		err, ok := <-errCh
+		if ok || err != nil {
+			t.Error("error expected")
+		}
+	})
+}
+
+func TestServiceController_testServices(t *testing.T) {
 	type fields struct {
 		Services    []Service
-		PingPeriod  time.Duration
 		PingTimeout time.Duration
-		stop        chan struct{}
-		state       int32
 	}
 	type args struct {
 		ctx context.Context
@@ -383,10 +529,53 @@ func TestServiceController_cycleTestServices(t *testing.T) {
 				Services: []Service{
 					&dummyService{brokeOnPing: true},
 				},
-				PingPeriod:  time.Millisecond,
 				PingTimeout: time.Millisecond * 5,
-				stop:        make(chan struct{}),
-				state:       appStateRunning,
+			},
+			args:    args{ctx: context.TODO()},
+			wantErr: true,
+		},
+		{
+			name: "broken ping 2",
+			fields: fields{
+				Services: []Service{
+					&dummyService{brokeOnPing: false},
+					&dummyService{brokeOnPing: false},
+					&dummyService{brokeOnPing: true},
+					&dummyService{brokeOnPing: false},
+				},
+				PingTimeout: time.Millisecond * 5,
+			},
+			args:    args{ctx: context.TODO()},
+			wantErr: true,
+		},
+		{
+			name: "all is ok",
+			fields: fields{
+				Services: []Service{
+					&dummyService{},
+					&dummyService{},
+					&dummyService{},
+					&dummyService{},
+				},
+				PingTimeout: time.Millisecond * 5,
+			},
+			args:    args{ctx: context.TODO()},
+			wantErr: false,
+		},
+		{
+			name: "throttle",
+			fields: fields{
+				Services: []Service{
+					&dummyService{
+						throttling: time.Millisecond * 10,
+					},
+					&dummyService{},
+					&dummyService{
+						throttling: time.Millisecond * 10,
+					},
+					&dummyService{},
+				},
+				PingTimeout: time.Millisecond * 1,
 			},
 			args:    args{ctx: context.TODO()},
 			wantErr: true,
@@ -396,12 +585,10 @@ func TestServiceController_cycleTestServices(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			s := &ServiceController{
 				Services:    tt.fields.Services,
-				PingPeriod:  tt.fields.PingPeriod,
 				PingTimeout: tt.fields.PingTimeout,
-				stop:        tt.fields.stop,
-				state:       tt.fields.state,
+				stop:        make(chan struct{}),
 			}
-			if err := s.cycleTestServices(tt.args.ctx); (err != nil) != tt.wantErr {
+			if err := s.testServices(tt.args.ctx); (err != nil) != tt.wantErr {
 				t.Errorf("cycleTestServices() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})

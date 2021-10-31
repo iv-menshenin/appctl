@@ -90,6 +90,8 @@ func (s *ServiceController) cycleTestServices(ctx context.Context) error {
 			if err := s.testServices(ctx); err != nil {
 				return err
 			}
+		case <-ctx.Done():
+			return ctx.Err()
 		}
 	}
 }
