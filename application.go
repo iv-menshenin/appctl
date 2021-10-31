@@ -3,7 +3,6 @@ package appctl
 import (
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"os/signal"
 	"sync/atomic"
@@ -59,6 +58,7 @@ func (a *Application) run(sig <-chan os.Signal) error {
 			if r != nil {
 				errCh <- fmt.Errorf("unhandled panic: %v", r)
 			}
+			close(errCh)
 		}()
 		if err := a.MainFunc(a, a.holdOn); err != nil {
 			errCh <- err
@@ -76,7 +76,7 @@ func (a *Application) run(sig <-chan os.Signal) error {
 	}()
 	select {
 	case err, ok := <-errCh:
-		if ok && err != io.EOF {
+		if ok && err != nil {
 			a.Shutdown()
 			return err
 		}
