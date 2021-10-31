@@ -63,12 +63,14 @@ func (d *dummyService) Close() error {
 }
 
 func TestServiceController_Init(t *testing.T) {
+	t.Parallel()
 	type fields struct {
-		Services    []Service
-		PingPeriod  time.Duration
-		PingTimeout time.Duration
-		stop        chan struct{}
-		state       int32
+		Services        []Service
+		PingPeriod      time.Duration
+		PingTimeout     time.Duration
+		ShutdownTimeout time.Duration
+		stop            chan struct{}
+		state           int32
 	}
 	type args struct {
 		ctx context.Context
@@ -106,7 +108,7 @@ func TestServiceController_Init(t *testing.T) {
 				if !c.Services[1].(*dummyService).passedInit {
 					return errors.New("second service was not initialized")
 				}
-				if c.PingPeriod != defaultPingPeriod || c.PingTimeout != defaultPingTimeout {
+				if c.PingPeriod != defaultPingPeriod || c.PingTimeout != defaultPingTimeout || c.ShutdownTimeout != defaultShutdownTimeout {
 					return errors.New("wrong timing config")
 				}
 				return nil
@@ -119,9 +121,10 @@ func TestServiceController_Init(t *testing.T) {
 					&dummyService{brokeOnClose: true, brokeOnPing: true},
 					&dummyService{brokeOnClose: true, brokeOnPing: true},
 				},
-				state:       appStateInit,
-				PingTimeout: time.Second * 100,
-				PingPeriod:  time.Second * 200,
+				state:           appStateInit,
+				PingTimeout:     time.Second * 100,
+				PingPeriod:      time.Second * 200,
+				ShutdownTimeout: time.Second * 300,
 			},
 			args:    args{ctx: context.TODO()},
 			wantErr: false,
@@ -133,6 +136,9 @@ func TestServiceController_Init(t *testing.T) {
 					return errors.New("second service was not initialized")
 				}
 				if c.PingPeriod != time.Second*200 || c.PingTimeout != time.Second*100 {
+					return errors.New("wrong timing config")
+				}
+				if c.ShutdownTimeout != time.Second*300 {
 					return errors.New("wrong timing config")
 				}
 				return nil
@@ -154,11 +160,12 @@ func TestServiceController_Init(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := &ServiceController{
-				Services:    tt.fields.Services,
-				PingPeriod:  tt.fields.PingPeriod,
-				PingTimeout: tt.fields.PingTimeout,
-				stop:        tt.fields.stop,
-				state:       tt.fields.state,
+				Services:        tt.fields.Services,
+				PingPeriod:      tt.fields.PingPeriod,
+				PingTimeout:     tt.fields.PingTimeout,
+				ShutdownTimeout: tt.fields.ShutdownTimeout,
+				stop:            tt.fields.stop,
+				state:           tt.fields.state,
 			}
 			if err := s.Init(tt.args.ctx); (err != nil) != tt.wantErr {
 				t.Errorf("Init() error = %v, wantErr %v", err, tt.wantErr)
@@ -172,6 +179,7 @@ func TestServiceController_Init(t *testing.T) {
 }
 
 func TestServiceController_initAllServices(t *testing.T) {
+	t.Parallel()
 	type fields struct {
 		Services []Service
 	}
@@ -227,6 +235,7 @@ func TestServiceController_initAllServices(t *testing.T) {
 
 func TestServiceController_Stop(t *testing.T) {
 	t.Run("channel closed", func(t *testing.T) {
+		t.Parallel()
 		s := &ServiceController{
 			stop:  make(chan struct{}),
 			state: appStateRunning,
@@ -240,6 +249,7 @@ func TestServiceController_Stop(t *testing.T) {
 		}
 	})
 	t.Run("channel not closed", func(t *testing.T) {
+		t.Parallel()
 		s := &ServiceController{
 			stop:  make(chan struct{}),
 			state: appStateHoldOn,
@@ -255,6 +265,7 @@ func TestServiceController_Stop(t *testing.T) {
 }
 
 func TestServiceController_Watch(t *testing.T) {
+	t.Parallel()
 	makeShortContext := func() context.Context {
 		ctx, _ := context.WithTimeout(context.Background(), time.Millisecond*50)
 		return ctx
@@ -357,6 +368,7 @@ func TestServiceController_Watch(t *testing.T) {
 }
 
 func TestServiceController_checkState(t *testing.T) {
+	t.Parallel()
 	type fields struct {
 		Services    []Service
 		PingPeriod  time.Duration
@@ -426,6 +438,7 @@ func TestServiceController_checkState(t *testing.T) {
 
 func TestServiceController_cycleTestServices(t *testing.T) {
 	t.Run("broken ping", func(t *testing.T) {
+		t.Parallel()
 		s := &ServiceController{
 			Services: []Service{
 				&dummyService{brokeOnPing: true},
@@ -441,6 +454,7 @@ func TestServiceController_cycleTestServices(t *testing.T) {
 		}
 	})
 	t.Run("context cancellation", func(t *testing.T) {
+		t.Parallel()
 		s := &ServiceController{
 			Services:    []Service{},
 			PingPeriod:  time.Millisecond,
@@ -475,6 +489,7 @@ func TestServiceController_cycleTestServices(t *testing.T) {
 		}
 	})
 	t.Run("service stopped", func(t *testing.T) {
+		t.Parallel()
 		s := &ServiceController{
 			Services:    []Service{},
 			PingPeriod:  time.Millisecond,
@@ -510,6 +525,7 @@ func TestServiceController_cycleTestServices(t *testing.T) {
 }
 
 func TestServiceController_testServices(t *testing.T) {
+	t.Parallel()
 	type fields struct {
 		Services    []Service
 		PingTimeout time.Duration
@@ -590,6 +606,86 @@ func TestServiceController_testServices(t *testing.T) {
 			}
 			if err := s.testServices(tt.args.ctx); (err != nil) != tt.wantErr {
 				t.Errorf("cycleTestServices() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestServiceController_DeInit(t *testing.T) {
+	t.Run("wrong state", func(t *testing.T) {
+		t.Parallel()
+		s := &ServiceController{
+			state: appStateReady,
+		}
+		if err := s.DeInit(); err != ErrWrongState {
+			t.Errorf("expected wrong state, got: %v", err)
+		}
+	})
+	t.Run("empty", func(t *testing.T) {
+		t.Parallel()
+		s := &ServiceController{
+			state:           appStateShutdown,
+			ShutdownTimeout: time.Second,
+		}
+		if err := s.DeInit(); err != nil {
+			t.Errorf("got error: %v", err)
+		}
+	})
+}
+
+func TestServiceController_deInit(t *testing.T) {
+	t.Parallel()
+	type fields struct {
+		Services        []Service
+		ShutdownTimeout time.Duration
+	}
+	tests := []struct {
+		name    string
+		fields  fields
+		wantErr bool
+	}{
+		{
+			name: "normal closing",
+			fields: fields{
+				Services: []Service{
+					&dummyService{throttling: time.Microsecond * 15},
+					&dummyService{throttling: time.Microsecond * 5},
+					&dummyService{},
+				},
+				ShutdownTimeout: time.Millisecond * 10,
+			},
+			wantErr: false,
+		},
+		{
+			name: "timeout",
+			fields: fields{
+				Services: []Service{
+					&dummyService{throttling: time.Second},
+				},
+				ShutdownTimeout: time.Millisecond * 10,
+			},
+			wantErr: true,
+		},
+		{
+			name: "error",
+			fields: fields{
+				Services: []Service{
+					&dummyService{brokeOnClose: true},
+					&dummyService{throttling: time.Microsecond * 12},
+				},
+				ShutdownTimeout: time.Second * 10,
+			},
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &ServiceController{
+				Services:        tt.fields.Services,
+				ShutdownTimeout: tt.fields.ShutdownTimeout,
+			}
+			if err := s.deInit(); (err != nil) != tt.wantErr {
+				t.Errorf("deInit() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}

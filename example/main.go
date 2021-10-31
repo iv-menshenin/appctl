@@ -118,11 +118,12 @@ func main() {
 		Services: []appctl.Service{
 			&srv.trudVsem,
 		},
+		ShutdownTimeout: time.Millisecond * 800,
 	}
 	var app = appctl.Application{
 		MainFunc:           srv.appStart,
 		InitFunc:           svc.Init,
-		TerminationTimeout: time.Minute,
+		TerminationTimeout: time.Millisecond * 500,
 	}
 	go func() {
 		defer app.Shutdown()
@@ -135,4 +136,7 @@ func main() {
 		os.Exit(1)
 	}
 	svc.Stop()
+	if err := svc.DeInit(); err != nil {
+		logError(err)
+	}
 }

@@ -23,9 +23,10 @@ type (
 		Close() error
 	}
 	ServiceController struct {
-		Services    []Service
-		PingPeriod  time.Duration
-		PingTimeout time.Duration
+		Services        []Service
+		PingPeriod      time.Duration
+		PingTimeout     time.Duration
+		ShutdownTimeout time.Duration
 
 		stop  chan struct{}
 		state int32
@@ -47,8 +48,9 @@ func (s *ServiceController) initAllServices(ctx context.Context) (initError erro
 }
 
 const (
-	defaultPingPeriod  = time.Second * 5
-	defaultPingTimeout = time.Millisecond * 1500
+	defaultPingPeriod      = time.Second * 5
+	defaultPingTimeout     = time.Millisecond * 1500
+	defaultShutdownTimeout = time.Millisecond * 15000
 )
 
 // Init will initialize all registered services. Will return an error if at least one of the initialization functions
@@ -67,6 +69,9 @@ func (s *ServiceController) Init(ctx context.Context) error {
 	}
 	if s.PingTimeout == 0 {
 		s.PingTimeout = defaultPingTimeout
+	}
+	if s.ShutdownTimeout == 0 {
+		s.ShutdownTimeout = defaultShutdownTimeout
 	}
 	return nil
 }
@@ -107,4 +112,41 @@ func (s *ServiceController) Stop() {
 	if s.checkState(appStateRunning, appStateShutdown) {
 		close(s.stop)
 	}
+}
+
+func (s *ServiceController) deInit() error {
+	shCtx, cancel := context.WithTimeout(context.Background(), s.ShutdownTimeout)
+	defer cancel()
+	var p parallelRun
+	for i := range s.Services {
+		var service = s.Services[i]
+		p.Do(shCtx, func(_ context.Context) error {
+			return service.Close()
+		})
+	}
+	var errCh = make(chan error)
+	go func() {
+		defer close(errCh)
+		if err := p.Wait(); err != nil {
+			errCh <- err
+		}
+	}()
+	for {
+		select {
+		case err, ok := <-errCh:
+			if ok {
+				return err
+			}
+			return nil
+		case <-shCtx.Done():
+			return shCtx.Err()
+		}
+	}
+}
+
+func (s *ServiceController) DeInit() error {
+	if s.checkState(appStateShutdown, appStateOff) {
+		return s.deInit()
+	}
+	return ErrWrongState
 }

@@ -31,6 +31,7 @@ const (
 	appStateRunning
 	appStateHoldOn
 	appStateShutdown
+	appStateOff
 )
 
 func (a *Application) init() error {
