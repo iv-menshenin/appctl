@@ -136,7 +136,7 @@ func main() {
 		os.Exit(1)
 	}
 	svc.Stop()
-	if err := svc.DeInit(); err != nil {
+	if err := svc.Release(); err != nil {
 		logError(err)
 	}
 }

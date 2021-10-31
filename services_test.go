@@ -611,13 +611,13 @@ func TestServiceController_testServices(t *testing.T) {
 	}
 }
 
-func TestServiceController_DeInit(t *testing.T) {
+func TestServiceController_Release(t *testing.T) {
 	t.Run("wrong state", func(t *testing.T) {
 		t.Parallel()
 		s := &ServiceController{
 			state: appStateReady,
 		}
-		if err := s.DeInit(); err != ErrWrongState {
+		if err := s.Release(); err != ErrWrongState {
 			t.Errorf("expected wrong state, got: %v", err)
 		}
 	})
@@ -627,13 +627,13 @@ func TestServiceController_DeInit(t *testing.T) {
 			state:           appStateShutdown,
 			ShutdownTimeout: time.Second,
 		}
-		if err := s.DeInit(); err != nil {
+		if err := s.Release(); err != nil {
 			t.Errorf("got error: %v", err)
 		}
 	})
 }
 
-func TestServiceController_deInit(t *testing.T) {
+func TestServiceController_release(t *testing.T) {
 	t.Parallel()
 	type fields struct {
 		Services        []Service
@@ -684,8 +684,8 @@ func TestServiceController_deInit(t *testing.T) {
 				Services:        tt.fields.Services,
 				ShutdownTimeout: tt.fields.ShutdownTimeout,
 			}
-			if err := s.deInit(); (err != nil) != tt.wantErr {
-				t.Errorf("deInit() error = %v, wantErr %v", err, tt.wantErr)
+			if err := s.release(); (err != nil) != tt.wantErr {
+				t.Errorf("release() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}

@@ -101,6 +101,11 @@ func (s *ServiceController) cycleTestServices(ctx context.Context) error {
 	}
 }
 
+// Watch monitors the health of resources. At a given frequency, all services will receive a Ping command,
+// and if any of the responses contains an error, all execution will immediately stop and the error will be
+// transmitted as a result of the Watch procedure.
+//
+// This procedure is synchronous, which means that control of the routine will be returned only when service monitoring is interrupted.
 func (s *ServiceController) Watch(ctx context.Context) error {
 	if !s.checkState(appStateReady, appStateRunning) {
 		return ErrWrongState
@@ -108,13 +113,14 @@ func (s *ServiceController) Watch(ctx context.Context) error {
 	return s.cycleTestServices(ctx)
 }
 
+// Stop sends a signal that monitoring should be stopped. Stops execution of the Watch procedure
 func (s *ServiceController) Stop() {
 	if s.checkState(appStateRunning, appStateShutdown) {
 		close(s.stop)
 	}
 }
 
-func (s *ServiceController) deInit() error {
+func (s *ServiceController) release() error {
 	shCtx, cancel := context.WithTimeout(context.Background(), s.ShutdownTimeout)
 	defer cancel()
 	var p parallelRun
@@ -144,9 +150,9 @@ func (s *ServiceController) deInit() error {
 	}
 }
 
-func (s *ServiceController) DeInit() error {
+func (s *ServiceController) Release() error {
 	if s.checkState(appStateShutdown, appStateOff) {
-		return s.deInit()
+		return s.release()
 	}
 	return ErrWrongState
 }
