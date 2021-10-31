@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net"
@@ -18,10 +19,44 @@ func logError(err error) {
 	}
 }
 
-// https://opendata.trudvsem.ru/api/v1/vacancies?text=%D0%BF%D1%80%D0%BE%D0%B3%D1%80%D0%B0%D0%BC%D0%BC%D0%B8%D1%81%D1%82&offset=0&limit=1&modifiedFrom=2021-10-24T00:00:00Z
-
 type server struct {
-	server http.Server
+	server   http.Server
+	trudVsem trudVsem
+}
+
+func (s *server) getVacancy() ([]byte, error) {
+	vacancy, ok := s.trudVsem.GetRandom()
+	if !ok {
+		return nil, nil
+	}
+	var b []byte
+	var w = bytes.NewBuffer(b)
+	if _, err := w.WriteString(fmt.Sprintf("<h3>%s (%s)</h3>", vacancy.JobName, vacancy.Region.Name)); err != nil {
+		return nil, err
+	}
+	if _, err := w.WriteString(fmt.Sprintf("<p class='description'>Компания: %s ищет сотрудника на должность '%s'.</p>", vacancy.Company.Name, vacancy.JobName)); err != nil {
+		return nil, err
+	}
+	if _, err := w.WriteString(fmt.Sprintf("<p class='condition'>Условия: %s, %s.</p>", vacancy.Employment, vacancy.Schedule)); err != nil {
+		return nil, err
+	}
+	if vacancy.SalaryMin != vacancy.SalaryMax && vacancy.SalaryMax != 0 && vacancy.SalaryMin != 0 {
+		if _, err := w.WriteString(fmt.Sprintf("<p class='salary'>зарплата от %0.2f до %0.2f руб.</p>", vacancy.SalaryMin, vacancy.SalaryMax)); err != nil {
+			return nil, err
+		}
+	} else if vacancy.SalaryMax > 0 {
+		if _, err := w.WriteString(fmt.Sprintf("<p class='salary'>зарплата %0.2f руб.</p>", vacancy.SalaryMax)); err != nil {
+			return nil, err
+		}
+	} else {
+		if _, err := w.WriteString(fmt.Sprintf("<p class='salary'>зарплата %0.2f руб.</p>", vacancy.SalaryMin)); err != nil {
+			return nil, err
+		}
+	}
+	if _, err := w.WriteString(fmt.Sprintf("<a href='%s'>ознакомиться</a>", vacancy.URL)); err != nil {
+		return nil, err
+	}
+	return w.Bytes(), nil
 }
 
 func (s *server) appStart(ctx context.Context, holdOn <-chan struct{}) error {
@@ -35,10 +70,19 @@ func (s *server) appStart(ctx context.Context, holdOn <-chan struct{}) error {
 			case <-holdOn:
 				w.WriteHeader(http.StatusServiceUnavailable)
 			default:
-				<-time.After(time.Second * 7)
-				w.Header().Add("Content-Type", "text/plain")
+				data, err := s.getVacancy()
+				if err != nil {
+					logError(err)
+					w.WriteHeader(http.StatusInternalServerError)
+					return
+				}
+				if len(data) == 0 {
+					w.WriteHeader(http.StatusNoContent)
+					return
+				}
+				w.Header().Add("Content-Type", "text/html;charset=utf-8")
 				w.WriteHeader(http.StatusOK)
-				if _, err := w.Write([]byte("hello world")); err != nil {
+				if _, err = w.Write(data); err != nil {
 					logError(err)
 				}
 			}
@@ -71,15 +115,24 @@ func (s *server) appStart(ctx context.Context, holdOn <-chan struct{}) error {
 func main() {
 	var srv server
 	var svc = appctl.ServiceController{
-		Services: []appctl.Service{},
+		Services: []appctl.Service{
+			&srv.trudVsem,
+		},
 	}
 	var app = appctl.Application{
 		MainFunc:           srv.appStart,
 		InitFunc:           svc.Init,
 		TerminationTimeout: time.Minute,
 	}
+	go func() {
+		defer app.Shutdown()
+		if err := svc.Watch(context.Background()); err != nil {
+			logError(err)
+		}
+	}()
 	if err := app.Run(); err != nil {
 		logError(err)
 		os.Exit(1)
 	}
+	svc.Stop()
 }
