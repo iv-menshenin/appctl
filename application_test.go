@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"testing"
@@ -146,28 +147,11 @@ func TestApplication_HoldOn(t *testing.T) {
 
 func TestApplication_Run(t *testing.T) {
 	t.Run("Run stages", func(t *testing.T) {
-		var state = "init"
 		var a = Application{
 			holdOn:   make(chan struct{}),
 			done:     make(chan struct{}),
 			appState: appStateInit,
-			InitFunc: func(ctx context.Context) error {
-				if state != "init" {
-					t.Error("wrong stage on init")
-				}
-				if a, ok := ctx.Value(AppContext{}).(*Application); ok {
-					if a.appState == appStateRunning {
-						state = "running checked"
-						return nil
-					}
-				}
-				t.Error("wrong app state")
-				return nil
-			},
 			MainFunc: func(ctx context.Context, holdOn <-chan struct{}) error {
-				if state != "running checked" {
-					t.Error("wrong stage on mainfunc")
-				}
 				return nil
 			},
 		}
@@ -187,10 +171,6 @@ func TestApplication_Run(t *testing.T) {
 			holdOn:   make(chan struct{}),
 			done:     make(chan struct{}),
 			appState: appStateRunning,
-			InitFunc: func(ctx context.Context) error {
-				result = true
-				return nil
-			},
 			MainFunc: func(ctx context.Context, holdOn <-chan struct{}) error {
 				result = true
 				return nil
@@ -205,24 +185,48 @@ func TestApplication_Run(t *testing.T) {
 	})
 	t.Run("wrong init", func(t *testing.T) {
 		var result = false
-		var eee = errors.New("test error")
 		var a = Application{
 			holdOn:   make(chan struct{}),
 			done:     make(chan struct{}),
 			appState: appStateInit,
-			InitFunc: func(ctx context.Context) error {
-				return eee
+			ServiceController: &ServiceController{
+				Services: []Service{
+					&dummyService{brokeOnInit: true},
+				},
 			},
 			MainFunc: func(ctx context.Context, holdOn <-chan struct{}) error {
 				result = true
 				return nil
 			},
 		}
-		if err := a.Run(); err != eee {
-			t.Errorf("want: %v, got: %v", eee, err)
+		if err := a.Run(); err == nil {
+			t.Errorf("want error, got: %v", err)
 		}
 		if result {
 			t.Error("wrong logic")
+		}
+	})
+	t.Run("break services", func(t *testing.T) {
+		var a = Application{
+			holdOn:   make(chan struct{}),
+			done:     make(chan struct{}),
+			appState: appStateInit,
+			ServiceController: &ServiceController{
+				Services: []Service{
+					&dummyService{
+						throttling:  time.Millisecond * 25,
+						brokeOnPing: true,
+					},
+				},
+				PingPeriod: time.Millisecond * 25,
+			},
+			MainFunc: func(ctx context.Context, holdOn <-chan struct{}) error {
+				<-time.After(time.Second * 100)
+				return nil
+			},
+		}
+		if err := a.Run(); err == nil {
+			t.Error("expected error here")
 		}
 	})
 }
@@ -309,10 +313,6 @@ func TestApplication_Shutdown(t *testing.T) {
 			holdOn:   make(chan struct{}),
 			done:     make(chan struct{}),
 			appState: appStateInit,
-			InitFunc: func(ctx context.Context) error {
-				result = true
-				return errors.New("test error")
-			},
 			MainFunc: func(ctx context.Context, holdOn <-chan struct{}) error {
 				result = true
 				<-holdOn
@@ -339,10 +339,6 @@ func TestApplication_Shutdown(t *testing.T) {
 			holdOn:   make(chan struct{}),
 			done:     make(chan struct{}),
 			appState: appStateHoldOn,
-			InitFunc: func(ctx context.Context) error {
-				result = true
-				return errors.New("test error")
-			},
 			MainFunc: func(ctx context.Context, holdOn <-chan struct{}) error {
 				result = true
 				<-holdOn
@@ -370,12 +366,6 @@ func TestApplication_Shutdown(t *testing.T) {
 
 func TestApplication_Value(t *testing.T) {
 	var a = Application{
-		InitFunc: func(ctx context.Context) error {
-			if _, ok := ctx.Value(AppContext{}).(*Application); !ok {
-				t.Error("wrong context")
-			}
-			return nil
-		},
 		MainFunc: func(ctx context.Context, holdOn <-chan struct{}) error {
 			if _, ok := ctx.Value(AppContext{}).(*Application); !ok {
 				t.Error("wrong context")
@@ -614,6 +604,59 @@ func TestApplication_run(t *testing.T) {
 		}
 		if atomic.LoadInt32(&status) != 1 {
 			t.Error("unexpected exit")
+		}
+	})
+}
+
+func TestApplication_setError(t *testing.T) {
+	t.Run("normal setError", func(t *testing.T) {
+		var e = errors.New("test 1")
+		var a = Application{
+			appState: appStateRunning,
+			holdOn:   make(chan struct{}),
+			done:     make(chan struct{}),
+		}
+		a.setError(e)
+		if a.err != e {
+			t.Errorf("expected: %v, got: %v", e, a.err)
+		}
+	})
+	t.Run("nil setError", func(t *testing.T) {
+		var e error
+		var a = Application{
+			appState: appStateRunning,
+			holdOn:   make(chan struct{}),
+			done:     make(chan struct{}),
+		}
+		a.setError(e)
+		if a.err != nil {
+			t.Errorf("expected: %v, got: %v", e, a.err)
+		}
+	})
+	t.Run("concurrent setError", func(t *testing.T) {
+		var e = errors.New("test error 2")
+		var a = Application{
+			appState: appStateRunning,
+			holdOn:   make(chan struct{}),
+			done:     make(chan struct{}),
+		}
+		var wg sync.WaitGroup
+		wg.Add(1000)
+		for nn := 0; nn < 1000; nn++ {
+			go func(i int) {
+				if i == 50 {
+					a.setError(e)
+				} else {
+					if a.checkState(appStateRunning, appStateRunning) {
+						a.setError(nil)
+					} else {
+						a.setError(errors.New("test error 4"))
+					}
+				}
+			}(nn)
+		}
+		if a.err != e {
+			t.Errorf("expected: %v, got: %v", e, a.err)
 		}
 	})
 }

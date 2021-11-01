@@ -122,21 +122,11 @@ func main() {
 	}
 	var app = appctl.Application{
 		MainFunc:           srv.appStart,
-		InitFunc:           svc.Init,
+		ServiceController:  &svc,
 		TerminationTimeout: time.Millisecond * 500,
 	}
-	go func() {
-		defer app.Shutdown()
-		if err := svc.Watch(context.Background()); err != nil {
-			logError(err)
-		}
-	}()
 	if err := app.Run(); err != nil {
 		logError(err)
 		os.Exit(1)
-	}
-	svc.Stop()
-	if err := svc.Release(); err != nil {
-		logError(err)
 	}
 }

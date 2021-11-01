@@ -13,11 +13,12 @@ import (
 type (
 	Application struct {
 		MainFunc              func(ctx context.Context, holdOn <-chan struct{}) error
-		InitFunc              func(ctx context.Context) error
+		ServiceController     *ServiceController
 		TerminationTimeout    time.Duration
 		InitializationTimeout time.Duration
 
 		appState int32
+		err      error
 		holdOn   chan struct{}
 		done     chan struct{}
 	}
@@ -42,10 +43,10 @@ func (a *Application) init() error {
 	}
 	a.holdOn = make(chan struct{})
 	a.done = make(chan struct{})
-	if a.InitFunc != nil {
+	if a.ServiceController != nil {
 		ctx, cancel := context.WithTimeout(a, a.InitializationTimeout)
 		defer cancel()
-		return a.InitFunc(ctx)
+		return a.ServiceController.Init(ctx)
 	}
 	return nil
 }
@@ -90,6 +91,16 @@ func (a *Application) checkState(old, new int32) bool {
 	return atomic.CompareAndSwapInt32(&a.appState, old, new)
 }
 
+func (a *Application) setError(err error) {
+	if err == nil {
+		return
+	}
+	if a.checkState(appStateRunning, appStateHoldOn) {
+		a.err = err
+	}
+	a.Shutdown()
+}
+
 // Run starts the execution of the main application thread with the MainFunc function.
 // Returns an error if the execution of the application ended abnormally, otherwise it will return a nil.
 func (a *Application) Run() error {
@@ -100,9 +111,16 @@ func (a *Application) Run() error {
 		if err := a.init(); err != nil {
 			return err
 		}
+		if a.ServiceController != nil {
+			go func() {
+				defer a.Shutdown()
+				a.setError(a.ServiceController.Watch(a))
+			}()
+		}
 		sig := make(chan os.Signal, 1)
 		signal.Notify(sig, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
-		return a.run(sig)
+		a.setError(a.run(sig))
+		return a.err
 	}
 	return ErrWrongState
 }
