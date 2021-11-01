@@ -114,7 +114,7 @@ func (s *server) appStart(ctx context.Context, holdOn <-chan struct{}) error {
 
 func main() {
 	var srv server
-	var svc = appctl.ServiceController{
+	var svc = appctl.ServiceKeeper{
 		Services: []appctl.Service{
 			&srv.trudVsem,
 		},
@@ -123,7 +123,7 @@ func main() {
 	}
 	var app = appctl.Application{
 		MainFunc:           srv.appStart,
-		ServiceController:  &svc,
+		Services:           &svc,
 		TerminationTimeout: time.Millisecond * 500,
 	}
 	if err := app.Run(); err != nil {

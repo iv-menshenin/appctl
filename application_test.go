@@ -189,7 +189,7 @@ func TestApplication_Run(t *testing.T) {
 			holdOn:   make(chan struct{}),
 			done:     make(chan struct{}),
 			appState: appStateInit,
-			ServiceController: &ServiceController{
+			Services: &ServiceKeeper{
 				Services: []Service{
 					&dummyService{brokeOnInit: true},
 				},
@@ -211,7 +211,7 @@ func TestApplication_Run(t *testing.T) {
 			holdOn:   make(chan struct{}),
 			done:     make(chan struct{}),
 			appState: appStateInit,
-			ServiceController: &ServiceController{
+			Services: &ServiceKeeper{
 				Services: []Service{
 					&dummyService{
 						throttling:  time.Millisecond * 25,

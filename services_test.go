@@ -62,7 +62,7 @@ func (d *dummyService) Close() error {
 	return nil
 }
 
-func TestServiceController_Init(t *testing.T) {
+func TestServiceKeeper_Init(t *testing.T) {
 	t.Parallel()
 	type fields struct {
 		Services        []Service
@@ -80,7 +80,7 @@ func TestServiceController_Init(t *testing.T) {
 		fields  fields
 		args    args
 		wantErr bool
-		check   func(*ServiceController) error
+		check   func(*ServiceKeeper) error
 	}{
 		{
 			name: "wrong state",
@@ -101,7 +101,7 @@ func TestServiceController_Init(t *testing.T) {
 			},
 			args:    args{ctx: context.TODO()},
 			wantErr: false,
-			check: func(c *ServiceController) error {
+			check: func(c *ServiceKeeper) error {
 				if !c.Services[0].(*dummyService).passedInit {
 					return errors.New("first service was not initialized")
 				}
@@ -128,7 +128,7 @@ func TestServiceController_Init(t *testing.T) {
 			},
 			args:    args{ctx: context.TODO()},
 			wantErr: false,
-			check: func(c *ServiceController) error {
+			check: func(c *ServiceKeeper) error {
 				if !c.Services[0].(*dummyService).passedInit {
 					return errors.New("first service was not initialized")
 				}
@@ -159,7 +159,7 @@ func TestServiceController_Init(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s := &ServiceController{
+			s := &ServiceKeeper{
 				Services:        tt.fields.Services,
 				PingPeriod:      tt.fields.PingPeriod,
 				PingTimeout:     tt.fields.PingTimeout,
@@ -178,7 +178,7 @@ func TestServiceController_Init(t *testing.T) {
 	}
 }
 
-func TestServiceController_initAllServices(t *testing.T) {
+func TestServiceKeeper_initAllServices(t *testing.T) {
 	t.Parallel()
 	type fields struct {
 		Services []Service
@@ -223,7 +223,7 @@ func TestServiceController_initAllServices(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s := &ServiceController{
+			s := &ServiceKeeper{
 				Services: tt.fields.Services,
 			}
 			if err := s.Init(tt.args.ctx); (err != nil) != tt.wantErr {
@@ -233,10 +233,10 @@ func TestServiceController_initAllServices(t *testing.T) {
 	}
 }
 
-func TestServiceController_Stop(t *testing.T) {
+func TestServiceKeeper_Stop(t *testing.T) {
 	t.Run("channel closed", func(t *testing.T) {
 		t.Parallel()
-		s := &ServiceController{
+		s := &ServiceKeeper{
 			stop:  make(chan struct{}),
 			state: appStateRunning,
 		}
@@ -250,7 +250,7 @@ func TestServiceController_Stop(t *testing.T) {
 	})
 	t.Run("channel not closed", func(t *testing.T) {
 		t.Parallel()
-		s := &ServiceController{
+		s := &ServiceKeeper{
 			stop:  make(chan struct{}),
 			state: appStateHoldOn,
 		}
@@ -264,7 +264,7 @@ func TestServiceController_Stop(t *testing.T) {
 	})
 }
 
-func TestServiceController_Watch(t *testing.T) {
+func TestServiceKeeper_Watch(t *testing.T) {
 	t.Parallel()
 	makeShortContext := func() context.Context {
 		ctx, _ := context.WithTimeout(context.Background(), time.Millisecond*50)
@@ -284,7 +284,7 @@ func TestServiceController_Watch(t *testing.T) {
 		name     string
 		fields   fields
 		args     args
-		parallel func(*ServiceController)
+		parallel func(*ServiceKeeper)
 		wantErr  bool
 	}{
 		{
@@ -323,7 +323,7 @@ func TestServiceController_Watch(t *testing.T) {
 				state:       appStateReady,
 			},
 			args: args{ctx: context.TODO()},
-			parallel: func(s *ServiceController) {
+			parallel: func(s *ServiceKeeper) {
 				<-time.After(time.Millisecond * 5)
 				s.Stop()
 			},
@@ -341,7 +341,7 @@ func TestServiceController_Watch(t *testing.T) {
 				state:       appStateReady,
 			},
 			args: args{ctx: makeShortContext()},
-			parallel: func(s *ServiceController) {
+			parallel: func(s *ServiceKeeper) {
 				<-time.After(time.Millisecond * 5000)
 				s.Stop()
 			},
@@ -350,7 +350,7 @@ func TestServiceController_Watch(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s := &ServiceController{
+			s := &ServiceKeeper{
 				Services:    tt.fields.Services,
 				PingPeriod:  tt.fields.PingPeriod,
 				PingTimeout: tt.fields.PingTimeout,
@@ -367,7 +367,7 @@ func TestServiceController_Watch(t *testing.T) {
 	}
 }
 
-func TestServiceController_checkState(t *testing.T) {
+func TestServiceKeeper_checkState(t *testing.T) {
 	t.Parallel()
 	type fields struct {
 		Services    []Service
@@ -422,7 +422,7 @@ func TestServiceController_checkState(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s := &ServiceController{
+			s := &ServiceKeeper{
 				Services:    tt.fields.Services,
 				PingPeriod:  tt.fields.PingPeriod,
 				PingTimeout: tt.fields.PingTimeout,
@@ -436,10 +436,10 @@ func TestServiceController_checkState(t *testing.T) {
 	}
 }
 
-func TestServiceController_cycleTestServices(t *testing.T) {
+func TestServiceKeeper_cycleTestServices(t *testing.T) {
 	t.Run("broken ping", func(t *testing.T) {
 		t.Parallel()
-		s := &ServiceController{
+		s := &ServiceKeeper{
 			Services: []Service{
 				&dummyService{brokeOnPing: true},
 			},
@@ -455,7 +455,7 @@ func TestServiceController_cycleTestServices(t *testing.T) {
 	})
 	t.Run("context cancellation", func(t *testing.T) {
 		t.Parallel()
-		s := &ServiceController{
+		s := &ServiceKeeper{
 			Services:    []Service{},
 			PingPeriod:  time.Millisecond,
 			PingTimeout: time.Millisecond * 5,
@@ -490,7 +490,7 @@ func TestServiceController_cycleTestServices(t *testing.T) {
 	})
 	t.Run("service stopped", func(t *testing.T) {
 		t.Parallel()
-		s := &ServiceController{
+		s := &ServiceKeeper{
 			Services:    []Service{},
 			PingPeriod:  time.Millisecond,
 			PingTimeout: time.Millisecond * 5,
@@ -524,7 +524,7 @@ func TestServiceController_cycleTestServices(t *testing.T) {
 	})
 }
 
-func TestServiceController_testServices(t *testing.T) {
+func TestServiceKeeper_testServices(t *testing.T) {
 	t.Parallel()
 	type fields struct {
 		Services    []Service
@@ -599,7 +599,7 @@ func TestServiceController_testServices(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s := &ServiceController{
+			s := &ServiceKeeper{
 				Services:    tt.fields.Services,
 				PingTimeout: tt.fields.PingTimeout,
 				stop:        make(chan struct{}),
@@ -611,10 +611,10 @@ func TestServiceController_testServices(t *testing.T) {
 	}
 }
 
-func TestServiceController_Release(t *testing.T) {
+func TestServiceKeeper_Release(t *testing.T) {
 	t.Run("wrong state", func(t *testing.T) {
 		t.Parallel()
-		s := &ServiceController{
+		s := &ServiceKeeper{
 			state: appStateReady,
 		}
 		if err := s.Release(); err != ErrWrongState {
@@ -623,7 +623,7 @@ func TestServiceController_Release(t *testing.T) {
 	})
 	t.Run("empty", func(t *testing.T) {
 		t.Parallel()
-		s := &ServiceController{
+		s := &ServiceKeeper{
 			state:           appStateShutdown,
 			ShutdownTimeout: time.Second,
 		}
@@ -633,7 +633,7 @@ func TestServiceController_Release(t *testing.T) {
 	})
 }
 
-func TestServiceController_release(t *testing.T) {
+func TestServiceKeeper_release(t *testing.T) {
 	t.Parallel()
 	type fields struct {
 		Services        []Service
@@ -680,7 +680,7 @@ func TestServiceController_release(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s := &ServiceController{
+			s := &ServiceKeeper{
 				Services:        tt.fields.Services,
 				ShutdownTimeout: tt.fields.ShutdownTimeout,
 			}

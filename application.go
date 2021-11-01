@@ -13,7 +13,7 @@ import (
 type (
 	Application struct {
 		MainFunc              func(ctx context.Context, holdOn <-chan struct{}) error
-		ServiceController     *ServiceController
+		Services              *ServiceKeeper
 		TerminationTimeout    time.Duration
 		InitializationTimeout time.Duration
 
@@ -43,10 +43,10 @@ func (a *Application) init() error {
 	}
 	a.holdOn = make(chan struct{})
 	a.done = make(chan struct{})
-	if a.ServiceController != nil {
+	if a.Services != nil {
 		ctx, cancel := context.WithTimeout(a, a.InitializationTimeout)
 		defer cancel()
-		return a.ServiceController.Init(ctx)
+		return a.Services.Init(ctx)
 	}
 	return nil
 }
@@ -111,10 +111,10 @@ func (a *Application) Run() error {
 		if err := a.init(); err != nil {
 			return err
 		}
-		if a.ServiceController != nil {
+		if a.Services != nil {
 			go func() {
 				defer a.Shutdown()
-				a.setError(a.ServiceController.Watch(a))
+				a.setError(a.Services.Watch(a))
 			}()
 		}
 		sig := make(chan os.Signal, 1)
