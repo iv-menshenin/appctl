@@ -119,6 +119,7 @@ func main() {
 			&srv.trudVsem,
 		},
 		ShutdownTimeout: time.Millisecond * 800,
+		PingPeriod:      time.Millisecond * 500,
 	}
 	var app = appctl.Application{
 		MainFunc:           srv.appStart,
