@@ -131,6 +131,8 @@ func (a *Application) Run() error {
 	}
 	if a.checkState(appStateInit, appStateRunning) {
 		if err := a.init(); err != nil {
+			a.err = err
+			a.appState = appStateShutdown
 			return err
 		}
 		var servicesRunning = make(chan struct{})

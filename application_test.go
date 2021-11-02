@@ -212,11 +212,18 @@ func TestApplication_Run(t *testing.T) {
 				return nil
 			},
 		}
-		if err := a.Run(); err == nil {
+		err := a.Run()
+		if err == nil {
 			t.Errorf("want error, got: %v", err)
 		}
 		if result {
 			t.Error("wrong logic")
+		}
+		if a.err == nil {
+			t.Errorf("a.err == expected: %v, got: nil", err)
+		}
+		if a.appState != appStateShutdown {
+			t.Error("expected appStateShutdown state")
 		}
 	})
 	t.Run("break services", func(t *testing.T) {
