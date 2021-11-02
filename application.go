@@ -2,7 +2,6 @@ package appctl
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"os/signal"
 	"sync/atomic"
@@ -79,13 +78,7 @@ func (a *Application) init() error {
 func (a *Application) run(sig <-chan os.Signal) error {
 	var errCh = make(chan error, 3)
 	go func() {
-		defer func() {
-			r := recover()
-			if r != nil {
-				errCh <- fmt.Errorf("unhandled panic: %v", r)
-			}
-			close(errCh)
-		}()
+		defer close(errCh)
 		if err := a.MainFunc(a, a.holdOn); err != nil {
 			errCh <- err
 		}
@@ -98,12 +91,11 @@ func (a *Application) run(sig <-chan os.Signal) error {
 		// Exiting the procedure of the main thread will lead to an implicit call Shutdown(),
 		// if this does not happen, we will make an explicit call through the shutdown timeout
 		<-time.After(a.TerminationTimeout)
-		a.Shutdown()
+		errCh <- ErrTermTimeout
 	}()
 	select {
 	case err, ok := <-errCh:
 		if ok && err != nil {
-			a.Shutdown()
 			return err
 		}
 	case <-a.done:

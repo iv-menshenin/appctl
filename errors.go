@@ -12,6 +12,7 @@ const (
 	ErrWrongState  appError = "wrong application state"
 	ErrMainOmitted appError = "main function is omitted"
 	ErrShutdown    appError = "application is in shutdown state"
+	ErrTermTimeout appError = "termination timeout"
 )
 
 func (e appError) Error() string {
