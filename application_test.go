@@ -193,7 +193,7 @@ func TestApplication_Run(t *testing.T) {
 			holdOn:   make(chan struct{}),
 			done:     make(chan struct{}),
 			appState: appStateInit,
-			Services: &ServiceKeeper{
+			Resources: &ServiceKeeper{
 				Services: []Service{
 					&dummyService{brokeOnInit: true},
 				},
@@ -215,7 +215,7 @@ func TestApplication_Run(t *testing.T) {
 			holdOn:   make(chan struct{}),
 			done:     make(chan struct{}),
 			appState: appStateInit,
-			Services: &ServiceKeeper{
+			Resources: &ServiceKeeper{
 				Services: []Service{
 					&dummyService{
 						throttling:  time.Millisecond * 25,
@@ -677,7 +677,7 @@ func TestApplication_init(t *testing.T) {
 	t.Run("init timeout", func(t *testing.T) {
 		var a = Application{
 			appState: appStateRunning,
-			Services: &ServiceKeeper{
+			Resources: &ServiceKeeper{
 				Services: []Service{
 					&dummyService{throttling: time.Second},
 				},

@@ -11,9 +11,29 @@ import (
 )
 
 type (
+	Resources interface {
+		// Init is executed before transferring control to MainFunc. Should initialize resources and check their
+		// minimum health. If an error is returned, MainFunc will not be started.
+		Init(context.Context) error
+		// Watch is executed in the background, monitors the state of resources.
+		// Exiting this procedure will immediately stop the application.
+		Watch(context.Context) error
+		// Stop signals the Watch procedure to terminate the work
+		Stop()
+		// Release releases the resources. Executed just before exiting the Application.Run
+		Release() error
+	}
 	Application struct {
-		MainFunc              func(ctx context.Context, holdOn <-chan struct{}) error
-		Services              *ServiceKeeper
+		// MainFunc will run as the main thread of execution when you execute the Run method.
+		// Termination of this function will result in the termination of Run, the error that was passed as a
+		// result will be thrown as a result of Run execution.
+		//
+		// The holdOn channel controls the runtime of the application, as soon as it closes, you need to gracefully
+		// complete all current tasks and exit the MainFunc.
+		MainFunc func(ctx context.Context, holdOn <-chan struct{}) error
+		// Resources is an abstraction that represents the resources needed to execute the main thread.
+		// The health of resources directly affects the main thread of execution.
+		Resources             Resources
 		TerminationTimeout    time.Duration
 		InitializationTimeout time.Duration
 
@@ -48,10 +68,10 @@ func (a *Application) init() error {
 	}
 	a.holdOn = make(chan struct{})
 	a.done = make(chan struct{})
-	if a.Services != nil {
+	if a.Resources != nil {
 		ctx, cancel := context.WithTimeout(a, a.InitializationTimeout)
 		defer cancel()
-		return a.Services.Init(ctx)
+		return a.Resources.Init(ctx)
 	}
 	return nil
 }
@@ -116,15 +136,26 @@ func (a *Application) Run() error {
 		if err := a.init(); err != nil {
 			return err
 		}
-		if a.Services != nil {
+		var servicesRunning = make(chan struct{})
+		if a.Resources != nil {
 			go func() {
+				defer close(servicesRunning)
+				// if the stop is due to the correct stop of services without any error,
+				// we still have to stop the application
 				defer a.Shutdown()
-				a.setError(a.Services.Watch(a))
+				a.setError(a.Resources.Watch(a))
 			}()
 		}
 		sig := make(chan os.Signal, 1)
 		signal.Notify(sig, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
+		// main thread execution
 		a.setError(a.run(sig))
+		// shutdown
+		if a.Resources != nil {
+			a.Resources.Stop()
+			<-servicesRunning
+			a.setError(a.Resources.Release())
+		}
 		return a.err
 	}
 	return ErrWrongState
@@ -159,7 +190,10 @@ func (a *Application) Done() <-chan struct{} {
 // If Done is not yet closed, Err returns nil. If Done is closed, Err returns ErrShutdown.
 func (a *Application) Err() error {
 	if atomic.LoadInt32(&a.appState) == appStateShutdown {
-		return ErrShutdown
+		if a.err == nil {
+			return ErrShutdown
+		}
+		return a.err
 	}
 	return nil
 }

@@ -123,7 +123,7 @@ func main() {
 	}
 	var app = appctl.Application{
 		MainFunc:           srv.appStart,
-		Services:           &svc,
+		Resources:          &svc,
 		TerminationTimeout: time.Millisecond * 500,
 	}
 	if err := app.Run(); err != nil {
