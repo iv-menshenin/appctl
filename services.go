@@ -42,9 +42,9 @@ func (s *ServiceKeeper) initAllServices(ctx context.Context) (initError error) {
 	defer cancel()
 	var p parallelRun
 	for i := range s.Services {
-		p.Do(initCtx, s.Services[i].Init)
+		p.do(initCtx, s.Services[i].Init)
 	}
-	return p.Wait()
+	return p.wait()
 }
 
 const (
@@ -81,9 +81,9 @@ func (s *ServiceKeeper) testServices(ctx context.Context) (testError error) {
 	defer cancel()
 	var p parallelRun
 	for i := range s.Services {
-		p.Do(ctxPing, s.Services[i].Ping)
+		p.do(ctxPing, s.Services[i].Ping)
 	}
-	return p.Wait()
+	return p.wait()
 }
 
 func (s *ServiceKeeper) cycleTestServices(ctx context.Context) error {
@@ -126,14 +126,14 @@ func (s *ServiceKeeper) release() error {
 	var p parallelRun
 	for i := range s.Services {
 		var service = s.Services[i]
-		p.Do(shCtx, func(_ context.Context) error {
+		p.do(shCtx, func(_ context.Context) error {
 			return service.Close()
 		})
 	}
 	var errCh = make(chan error)
 	go func() {
 		defer close(errCh)
-		if err := p.Wait(); err != nil {
+		if err := p.wait(); err != nil {
 			errCh <- err
 		}
 	}()

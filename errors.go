@@ -38,7 +38,7 @@ type parallelRun struct {
 	err arrError
 }
 
-func (p *parallelRun) Do(ctx context.Context, f func(context.Context) error) {
+func (p *parallelRun) do(ctx context.Context, f func(context.Context) error) {
 	p.wg.Add(1)
 	go func() {
 		defer func() {
@@ -58,7 +58,7 @@ func (p *parallelRun) Do(ctx context.Context, f func(context.Context) error) {
 	}()
 }
 
-func (p *parallelRun) Wait() error {
+func (p *parallelRun) wait() error {
 	p.wg.Wait()
 	if len(p.err) > 0 {
 		return p.err

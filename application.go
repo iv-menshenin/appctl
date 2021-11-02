@@ -10,6 +10,7 @@ import (
 )
 
 type (
+	// Resources is an abstraction representing application resources.
 	Resources interface {
 		// Init is executed before transferring control to MainFunc. Should initialize resources and check their
 		// minimum health. If an error is returned, MainFunc will not be started.
@@ -32,8 +33,12 @@ type (
 		MainFunc func(ctx context.Context, holdOn <-chan struct{}) error
 		// Resources is an abstraction that represents the resources needed to execute the main thread.
 		// The health of resources directly affects the main thread of execution.
-		Resources             Resources
-		TerminationTimeout    time.Duration
+		Resources Resources
+		// TerminationTimeout limits the time for the main thread to terminate. On normal shutdown,
+		// if MainFunc does not return within the allotted time, the job will terminate with an ErrTermTimeout error.
+		TerminationTimeout time.Duration
+		// InitializationTimeout limits the time to initialize resources.
+		// If the resources are not initialized within the allotted time, the application will not be launched
 		InitializationTimeout time.Duration
 
 		appState int32

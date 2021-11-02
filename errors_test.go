@@ -79,31 +79,31 @@ func Test_parallelRun_Do(t *testing.T) {
 		t.Parallel()
 		var p parallelRun
 		var e = errors.New("test parallel run error")
-		p.Do(context.TODO(), func(ctx context.Context) error {
+		p.do(context.TODO(), func(ctx context.Context) error {
 			return e
 		})
 		expect := arrError{e}
-		if err := p.Wait(); err.Error() != expect.Error() {
+		if err := p.wait(); err.Error() != expect.Error() {
 			t.Errorf("expected error '%v', got '%v'", expect, err)
 		}
 	})
 	t.Run("well done", func(t *testing.T) {
 		t.Parallel()
 		var p parallelRun
-		p.Do(context.TODO(), func(ctx context.Context) error {
+		p.do(context.TODO(), func(ctx context.Context) error {
 			return nil
 		})
-		if err := p.Wait(); err != nil {
+		if err := p.wait(); err != nil {
 			t.Errorf("unexpected error '%v'", err)
 		}
 	})
 	t.Run("catch panic", func(t *testing.T) {
 		t.Parallel()
 		var p parallelRun
-		p.Do(context.TODO(), func(ctx context.Context) error {
+		p.do(context.TODO(), func(ctx context.Context) error {
 			panic("bang-bang")
 		})
-		if err := p.Wait(); err == nil {
+		if err := p.wait(); err == nil {
 			t.Error("panic lost")
 		}
 	})
@@ -111,14 +111,14 @@ func Test_parallelRun_Do(t *testing.T) {
 		t.Parallel()
 		var p parallelRun
 		var e = errors.New("test parallel run error in multiple")
-		p.Do(context.TODO(), func(ctx context.Context) error {
+		p.do(context.TODO(), func(ctx context.Context) error {
 			return e
 		})
-		p.Do(context.TODO(), func(ctx context.Context) error {
+		p.do(context.TODO(), func(ctx context.Context) error {
 			return nil
 		})
 		expect := arrError{e}
-		if err := p.Wait(); err.Error() != expect.Error() {
+		if err := p.wait(); err.Error() != expect.Error() {
 			t.Errorf("expected error '%v', got '%v'", expect, err)
 		}
 	})
@@ -128,12 +128,12 @@ func Test_parallelRun_Wait(t *testing.T) {
 	t.Parallel()
 	var p parallelRun
 	var e = errors.New("test wait for error")
-	p.Do(context.TODO(), func(ctx context.Context) error {
+	p.do(context.TODO(), func(ctx context.Context) error {
 		<-time.After(time.Millisecond * 5)
 		return e
 	})
 	expect := arrError{e}
-	if err := p.Wait(); err.Error() != expect.Error() {
+	if err := p.wait(); err.Error() != expect.Error() {
 		t.Errorf("expected error '%v', got '%v'", expect, err)
 	}
 }

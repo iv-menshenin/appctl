@@ -3,6 +3,7 @@ package appctl
 import (
 	"context"
 	"errors"
+	"io"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -78,6 +79,14 @@ func TestApplication_Err(t *testing.T) {
 			name:    "on shutdown state",
 			app:     Application{appState: appStateShutdown},
 			needErr: ErrShutdown,
+		},
+		{
+			name: "application.err",
+			app: Application{
+				appState: appStateShutdown,
+				err:      io.EOF,
+			},
+			needErr: io.EOF,
 		},
 	}
 	for i := range testCases {
