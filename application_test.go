@@ -12,6 +12,7 @@ import (
 )
 
 func TestApplication_Deadline(t *testing.T) {
+	t.Parallel()
 	var a Application
 	dl, ok := a.Deadline()
 	if ok {
@@ -23,6 +24,7 @@ func TestApplication_Deadline(t *testing.T) {
 }
 
 func TestApplication_Done(t *testing.T) {
+	// do not put t.Parallel
 	var a = Application{
 		holdOn: make(chan struct{}),
 		done:   make(chan struct{}),
@@ -50,6 +52,7 @@ func TestApplication_Done(t *testing.T) {
 }
 
 func TestApplication_Err(t *testing.T) {
+	t.Parallel()
 	type testCase struct {
 		name    string
 		app     Application
@@ -146,6 +149,7 @@ func TestApplication_HoldOn(t *testing.T) {
 }
 
 func TestApplication_Run(t *testing.T) {
+	t.Parallel()
 	t.Run("Run stages", func(t *testing.T) {
 		var a = Application{
 			holdOn:   make(chan struct{}),
@@ -232,6 +236,7 @@ func TestApplication_Run(t *testing.T) {
 }
 
 func TestApplication_Shutdown(t *testing.T) {
+	t.Parallel()
 	checkBothChannels := func(app Application) error {
 		select {
 		case <-app.holdOn:
@@ -365,6 +370,7 @@ func TestApplication_Shutdown(t *testing.T) {
 }
 
 func TestApplication_Value(t *testing.T) {
+	t.Parallel()
 	var a = Application{
 		MainFunc: func(ctx context.Context, holdOn <-chan struct{}) error {
 			if _, ok := ctx.Value(AppContext{}).(*Application); !ok {
@@ -379,6 +385,7 @@ func TestApplication_Value(t *testing.T) {
 }
 
 func TestApplication_checkState(t *testing.T) {
+	t.Parallel()
 	type fields struct {
 		appState int32
 	}
@@ -436,6 +443,7 @@ func TestApplication_checkState(t *testing.T) {
 }
 
 func TestApplication_run(t *testing.T) {
+	t.Parallel()
 	t.Run("exit by SIGINT", func(t *testing.T) {
 		var status int32
 		var a = Application{
@@ -609,6 +617,7 @@ func TestApplication_run(t *testing.T) {
 }
 
 func TestApplication_setError(t *testing.T) {
+	t.Parallel()
 	t.Run("normal setError", func(t *testing.T) {
 		var e = errors.New("test 1")
 		var a = Application{
@@ -653,10 +662,44 @@ func TestApplication_setError(t *testing.T) {
 						a.setError(errors.New("test error 4"))
 					}
 				}
+				wg.Done()
 			}(nn)
 		}
+		wg.Wait()
 		if a.err != e {
 			t.Errorf("expected: %v, got: %v", e, a.err)
+		}
+	})
+}
+
+func TestApplication_init(t *testing.T) {
+	t.Parallel()
+	t.Run("init timeout", func(t *testing.T) {
+		var a = Application{
+			appState: appStateRunning,
+			Services: &ServiceKeeper{
+				Services: []Service{
+					&dummyService{throttling: time.Second},
+				},
+			},
+			InitializationTimeout: time.Millisecond * 2,
+		}
+		if err := a.init(); err == nil {
+			t.Error("expected timeout error here")
+		}
+	})
+	t.Run("defaults", func(t *testing.T) {
+		var a = Application{
+			appState: appStateRunning,
+		}
+		if err := a.init(); err != nil {
+			t.Error(err)
+		}
+		if a.InitializationTimeout != defaultInitializationTimeout || a.TerminationTimeout != defaultTerminationTimeout {
+			t.Error("incorrect default values")
+		}
+		if a.done == nil || a.holdOn == nil {
+			t.Error("channels is not initialized")
 		}
 	})
 }

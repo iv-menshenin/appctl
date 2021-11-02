@@ -34,12 +34,17 @@ const (
 	appStateOff
 )
 
+const (
+	defaultTerminationTimeout    = time.Second
+	defaultInitializationTimeout = time.Second * 15
+)
+
 func (a *Application) init() error {
 	if a.TerminationTimeout == 0 {
-		a.TerminationTimeout = time.Second
+		a.TerminationTimeout = defaultTerminationTimeout
 	}
 	if a.InitializationTimeout == 0 {
-		a.InitializationTimeout = time.Second * 15
+		a.InitializationTimeout = defaultInitializationTimeout
 	}
 	a.holdOn = make(chan struct{})
 	a.done = make(chan struct{})

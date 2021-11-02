@@ -24,7 +24,12 @@ func (d *dummyService) Init(ctx context.Context) error {
 		return errors.New("bang")
 	}
 	if d.throttling > 0 {
-		<-time.After(d.throttling)
+		select {
+		case <-time.After(d.throttling):
+			// ok
+		case <-ctx.Done():
+			// timeout
+		}
 	}
 	select {
 	case <-ctx.Done():
@@ -40,7 +45,12 @@ func (d *dummyService) Ping(ctx context.Context) error {
 		return errors.New("bang")
 	}
 	if d.throttling > 0 {
-		<-time.After(d.throttling)
+		select {
+		case <-time.After(d.throttling):
+			// ok
+		case <-ctx.Done():
+			// timeout
+		}
 	}
 	select {
 	case <-ctx.Done():
