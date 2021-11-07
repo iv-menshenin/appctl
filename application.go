@@ -53,11 +53,9 @@ type (
 
 const (
 	appStateInit int32 = iota
-	appStateReady
 	appStateRunning
 	appStateHoldOn
 	appStateShutdown
-	appStateOff
 )
 
 const (

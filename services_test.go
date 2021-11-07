@@ -95,7 +95,7 @@ func TestServiceKeeper_Init(t *testing.T) {
 		{
 			name: "wrong state",
 			fields: fields{
-				state: appStateReady,
+				state: srvStateReady,
 			},
 			args:    args{ctx: context.TODO()},
 			wantErr: true,
@@ -107,7 +107,7 @@ func TestServiceKeeper_Init(t *testing.T) {
 					&dummyService{brokeOnClose: true, brokeOnPing: true},
 					&dummyService{brokeOnClose: true, brokeOnPing: true},
 				},
-				state: appStateInit,
+				state: srvStateInit,
 			},
 			args:    args{ctx: context.TODO()},
 			wantErr: false,
@@ -131,7 +131,7 @@ func TestServiceKeeper_Init(t *testing.T) {
 					&dummyService{brokeOnClose: true, brokeOnPing: true},
 					&dummyService{brokeOnClose: true, brokeOnPing: true},
 				},
-				state:           appStateInit,
+				state:           srvStateInit,
 				PingTimeout:     time.Second * 100,
 				PingPeriod:      time.Second * 200,
 				ShutdownTimeout: time.Second * 300,
@@ -161,7 +161,7 @@ func TestServiceKeeper_Init(t *testing.T) {
 					&dummyService{},
 					&dummyService{brokeOnInit: true},
 				},
-				state: appStateInit,
+				state: srvStateInit,
 			},
 			args:    args{ctx: context.TODO()},
 			wantErr: true,
@@ -248,7 +248,7 @@ func TestServiceKeeper_Stop(t *testing.T) {
 		t.Parallel()
 		s := &ServiceKeeper{
 			stop:  make(chan struct{}),
-			state: appStateRunning,
+			state: srvStateRunning,
 		}
 		s.Stop()
 		select {
@@ -262,7 +262,7 @@ func TestServiceKeeper_Stop(t *testing.T) {
 		t.Parallel()
 		s := &ServiceKeeper{
 			stop:  make(chan struct{}),
-			state: appStateHoldOn,
+			state: srvStateOff,
 		}
 		s.Stop()
 		select {
@@ -304,7 +304,7 @@ func TestServiceKeeper_Watch(t *testing.T) {
 					&dummyService{},
 				},
 				stop:  make(chan struct{}),
-				state: appStateRunning,
+				state: srvStateRunning,
 			},
 			args:    args{ctx: context.TODO()},
 			wantErr: true,
@@ -316,7 +316,7 @@ func TestServiceKeeper_Watch(t *testing.T) {
 					&dummyService{brokeOnPing: true},
 				},
 				stop:  make(chan struct{}),
-				state: appStateReady,
+				state: srvStateReady,
 			},
 			args:    args{ctx: context.TODO()},
 			wantErr: true,
@@ -330,7 +330,7 @@ func TestServiceKeeper_Watch(t *testing.T) {
 				PingPeriod:  time.Millisecond * 10,
 				PingTimeout: time.Millisecond * 100,
 				stop:        make(chan struct{}),
-				state:       appStateReady,
+				state:       srvStateReady,
 			},
 			args: args{ctx: context.TODO()},
 			parallel: func(s *ServiceKeeper) {
@@ -348,7 +348,7 @@ func TestServiceKeeper_Watch(t *testing.T) {
 				PingPeriod:  time.Millisecond * 10,
 				PingTimeout: time.Millisecond * 100,
 				stop:        make(chan struct{}),
-				state:       appStateReady,
+				state:       srvStateReady,
 			},
 			args: args{ctx: makeShortContext()},
 			parallel: func(s *ServiceKeeper) {
@@ -456,7 +456,7 @@ func TestServiceKeeper_cycleTestServices(t *testing.T) {
 			PingPeriod:  time.Millisecond,
 			PingTimeout: time.Millisecond * 5,
 			stop:        make(chan struct{}),
-			state:       appStateRunning,
+			state:       srvStateRunning,
 		}
 		err := s.cycleTestServices(context.Background())
 		if err == nil {
@@ -470,7 +470,7 @@ func TestServiceKeeper_cycleTestServices(t *testing.T) {
 			PingPeriod:  time.Millisecond,
 			PingTimeout: time.Millisecond * 5,
 			stop:        make(chan struct{}),
-			state:       appStateRunning,
+			state:       srvStateRunning,
 		}
 		ctx, cancel := context.WithCancel(context.Background())
 		var errCh = make(chan error)
@@ -505,7 +505,7 @@ func TestServiceKeeper_cycleTestServices(t *testing.T) {
 			PingPeriod:  time.Millisecond,
 			PingTimeout: time.Millisecond * 5,
 			stop:        make(chan struct{}),
-			state:       appStateRunning,
+			state:       srvStateRunning,
 		}
 		var errCh = make(chan error)
 		go func() {
@@ -625,7 +625,7 @@ func TestServiceKeeper_Release(t *testing.T) {
 	t.Run("wrong state", func(t *testing.T) {
 		t.Parallel()
 		s := &ServiceKeeper{
-			state: appStateReady,
+			state: srvStateReady,
 		}
 		if err := s.Release(); err != ErrWrongState {
 			t.Errorf("expected wrong state, got: %v", err)
@@ -634,7 +634,7 @@ func TestServiceKeeper_Release(t *testing.T) {
 	t.Run("empty", func(t *testing.T) {
 		t.Parallel()
 		s := &ServiceKeeper{
-			state:           appStateShutdown,
+			state:           srvStateShutdown,
 			ShutdownTimeout: time.Second,
 		}
 		if err := s.Release(); err != nil {

@@ -33,6 +33,14 @@ type (
 	}
 )
 
+const (
+	srvStateInit int32 = iota
+	srvStateReady
+	srvStateRunning
+	srvStateShutdown
+	srvStateOff
+)
+
 func (s *ServiceKeeper) checkState(old, new int32) bool {
 	return atomic.CompareAndSwapInt32(&s.state, old, new)
 }
@@ -57,7 +65,7 @@ const (
 // returned an error. It is very important that after the first error, the context with which the initialization
 // functions of all services are performed will be immediately canceled.
 func (s *ServiceKeeper) Init(ctx context.Context) error {
-	if !s.checkState(appStateInit, appStateReady) {
+	if !s.checkState(srvStateInit, srvStateReady) {
 		return ErrWrongState
 	}
 	if err := s.initAllServices(ctx); err != nil {
@@ -107,7 +115,7 @@ func (s *ServiceKeeper) cycleTestServices(ctx context.Context) error {
 //
 // This procedure is synchronous, which means that control of the routine will be returned only when service monitoring is interrupted.
 func (s *ServiceKeeper) Watch(ctx context.Context) error {
-	if !s.checkState(appStateReady, appStateRunning) {
+	if !s.checkState(srvStateReady, srvStateRunning) {
 		return ErrWrongState
 	}
 	if err := s.cycleTestServices(ctx); err != nil && err != ErrShutdown {
@@ -118,7 +126,7 @@ func (s *ServiceKeeper) Watch(ctx context.Context) error {
 
 // Stop sends a signal that monitoring should be stopped. Stops execution of the Watch procedure
 func (s *ServiceKeeper) Stop() {
-	if s.checkState(appStateRunning, appStateShutdown) {
+	if s.checkState(srvStateRunning, srvStateShutdown) {
 		close(s.stop)
 	}
 }
@@ -154,7 +162,7 @@ func (s *ServiceKeeper) release() error {
 }
 
 func (s *ServiceKeeper) Release() error {
-	if s.checkState(appStateShutdown, appStateOff) {
+	if s.checkState(srvStateShutdown, srvStateOff) {
 		return s.release()
 	}
 	return ErrWrongState
