@@ -59,7 +59,7 @@ func (s *server) getVacancy() ([]byte, error) {
 	return w.Bytes(), nil
 }
 
-func (s *server) appStart(ctx context.Context, holdOn <-chan struct{}) error {
+func (s *server) appStart(ctx context.Context, halt <-chan struct{}) error {
 	var wg sync.WaitGroup
 	s.server = http.Server{
 		Addr: ":8900",
@@ -67,7 +67,7 @@ func (s *server) appStart(ctx context.Context, holdOn <-chan struct{}) error {
 			wg.Add(1)
 			defer wg.Done()
 			select {
-			case <-holdOn:
+			case <-halt:
 				w.WriteHeader(http.StatusServiceUnavailable)
 			default:
 				data, err := s.getVacancy()
@@ -100,7 +100,7 @@ func (s *server) appStart(ctx context.Context, holdOn <-chan struct{}) error {
 		},
 	}
 	go func() {
-		<-holdOn
+		<-halt
 		wg.Wait()
 		if err := s.server.Close(); err != nil {
 			logError(err)

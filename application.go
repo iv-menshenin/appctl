@@ -29,9 +29,9 @@ type (
 		// Termination of this function will result in the termination of Run, the error that was passed as a
 		// result will be thrown as a result of Run execution.
 		//
-		// The holdOn channel controls the runtime of the application, as soon as it closes, you need to gracefully
+		// The halt channel controls the runtime of the application, as soon as it closes, you need to gracefully
 		// complete all current tasks and exit the MainFunc.
-		MainFunc func(ctx context.Context, holdOn <-chan struct{}) error
+		MainFunc func(ctx context.Context, halt <-chan struct{}) error
 		// Resources is an abstraction that represents the resources needed to execute the main thread.
 		// The health of resources directly affects the main thread of execution.
 		Resources Resources
@@ -45,7 +45,7 @@ type (
 		appState int32
 		mux      sync.Mutex
 		err      error
-		holdOn   chan struct{}
+		halt     chan struct{}
 		done     chan struct{}
 	}
 	AppContext struct{}
@@ -54,7 +54,7 @@ type (
 const (
 	appStateInit int32 = iota
 	appStateRunning
-	appStateHoldOn
+	appStateHalt
 	appStateShutdown
 )
 
@@ -70,7 +70,7 @@ func (a *Application) init() error {
 	if a.InitializationTimeout == 0 {
 		a.InitializationTimeout = defaultInitializationTimeout
 	}
-	a.holdOn = make(chan struct{})
+	a.halt = make(chan struct{})
 	a.done = make(chan struct{})
 	if a.Resources != nil {
 		ctx, cancel := context.WithTimeout(a, a.InitializationTimeout)
@@ -85,7 +85,7 @@ func (a *Application) run(sig <-chan os.Signal) error {
 	var errRun = make(chan error, 1)
 	go func() {
 		defer close(errRun)
-		if err := a.MainFunc(a, a.holdOn); err != nil {
+		if err := a.MainFunc(a, a.halt); err != nil {
 			errRun <- err
 		}
 	}()
@@ -95,7 +95,7 @@ func (a *Application) run(sig <-chan os.Signal) error {
 		select {
 		// wait for os signal
 		case <-sig:
-			a.HoldOn()
+			a.Halt()
 			// In this mode, the main thread should stop accepting new requests, terminate all current requests, and exit.
 			// Exiting the procedure of the main thread will lead to an implicit call Shutdown(),
 			// if this does not happen, we will make an explicit call through the shutdown timeout
@@ -189,17 +189,17 @@ func (a *Application) Run() error {
 	return ErrWrongState
 }
 
-// HoldOn signals the application to terminate the current computational processes and prepare to stop the application.
-func (a *Application) HoldOn() {
-	if a.checkState(appStateRunning, appStateHoldOn) {
-		close(a.holdOn)
+// Halt signals the application to terminate the current computational processes and prepare to stop the application.
+func (a *Application) Halt() {
+	if a.checkState(appStateRunning, appStateHalt) {
+		close(a.halt)
 	}
 }
 
 // Shutdown stops the application immediately. At this point, all calculations should be completed.
 func (a *Application) Shutdown() {
-	a.HoldOn()
-	if a.checkState(appStateHoldOn, appStateShutdown) {
+	a.Halt()
+	if a.checkState(appStateHalt, appStateShutdown) {
 		close(a.done)
 	}
 }

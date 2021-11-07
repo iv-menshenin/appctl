@@ -52,8 +52,8 @@ func TestApplication_Deadline(t *testing.T) {
 func TestApplication_Done(t *testing.T) {
 	// do not put t.Parallel
 	var a = Application{
-		holdOn: make(chan struct{}),
-		done:   make(chan struct{}),
+		halt: make(chan struct{}),
+		done: make(chan struct{}),
 	}
 	t.Run("test value", func(t *testing.T) {
 		if a.Done() != a.done {
@@ -96,8 +96,8 @@ func TestApplication_Err(t *testing.T) {
 			needErr: nil,
 		},
 		{
-			name:    "on holdon state",
-			app:     Application{appState: appStateHoldOn},
+			name:    "on halt state",
+			app:     Application{appState: appStateHalt},
 			needErr: nil,
 		},
 		{
@@ -132,56 +132,56 @@ func TestApplication_Err(t *testing.T) {
 	}
 }
 
-func TestApplication_HoldOn(t *testing.T) {
+func TestApplication_Halt(t *testing.T) {
 	t.Run("close channel", func(t *testing.T) {
 		var a = Application{
-			holdOn:   make(chan struct{}),
+			halt:     make(chan struct{}),
 			done:     make(chan struct{}),
 			appState: appStateRunning,
 		}
-		a.HoldOn()
+		a.Halt()
 		select {
 		case <-a.done:
 			t.Error("the done chan is closed")
 		default:
 			select {
-			case <-a.holdOn:
-				if a.appState != appStateHoldOn {
+			case <-a.halt:
+				if a.appState != appStateHalt {
 					t.Error("wrong app state")
 				}
 			default:
-				t.Error("the holdOn chan is open")
+				t.Error("the halt chan is open")
 			}
 		}
 	})
 	t.Run("wrong state", func(t *testing.T) {
 		var apps = []Application{
 			{
-				holdOn:   make(chan struct{}),
+				halt:     make(chan struct{}),
 				done:     make(chan struct{}),
 				appState: appStateInit,
 			},
 			{
-				holdOn:   make(chan struct{}),
+				halt:     make(chan struct{}),
 				done:     make(chan struct{}),
-				appState: appStateHoldOn,
+				appState: appStateHalt,
 			},
 			{
-				holdOn:   make(chan struct{}),
+				halt:     make(chan struct{}),
 				done:     make(chan struct{}),
 				appState: appStateShutdown,
 			},
 		}
 		for i := range apps {
 			a := apps[i]
-			a.HoldOn()
+			a.Halt()
 			select {
 			case <-a.done:
 				t.Error("the done chan is closed")
 			default:
 				select {
-				case <-a.holdOn:
-					t.Error("the holdOn chan is closed")
+				case <-a.halt:
+					t.Error("the halt chan is closed")
 				default:
 					// good case
 				}
@@ -194,10 +194,10 @@ func TestApplication_Run(t *testing.T) {
 	t.Parallel()
 	t.Run("Run stages", func(t *testing.T) {
 		var a = Application{
-			holdOn:   make(chan struct{}),
+			halt:     make(chan struct{}),
 			done:     make(chan struct{}),
 			appState: appStateInit,
-			MainFunc: func(ctx context.Context, holdOn <-chan struct{}) error {
+			MainFunc: func(context.Context, <-chan struct{}) error {
 				return nil
 			},
 		}
@@ -214,10 +214,10 @@ func TestApplication_Run(t *testing.T) {
 	t.Run("running twice", func(t *testing.T) {
 		var result = false
 		var a = Application{
-			holdOn:   make(chan struct{}),
+			halt:     make(chan struct{}),
 			done:     make(chan struct{}),
 			appState: appStateRunning,
-			MainFunc: func(ctx context.Context, holdOn <-chan struct{}) error {
+			MainFunc: func(context.Context, <-chan struct{}) error {
 				result = true
 				return nil
 			},
@@ -232,7 +232,7 @@ func TestApplication_Run(t *testing.T) {
 	t.Run("wrong init", func(t *testing.T) {
 		var result = false
 		var a = Application{
-			holdOn:   make(chan struct{}),
+			halt:     make(chan struct{}),
 			done:     make(chan struct{}),
 			appState: appStateInit,
 			Resources: &ServiceKeeper{
@@ -240,7 +240,7 @@ func TestApplication_Run(t *testing.T) {
 					&dummyService{brokeOnInit: true},
 				},
 			},
-			MainFunc: func(ctx context.Context, holdOn <-chan struct{}) error {
+			MainFunc: func(context.Context, <-chan struct{}) error {
 				result = true
 				return nil
 			},
@@ -261,7 +261,7 @@ func TestApplication_Run(t *testing.T) {
 	})
 	t.Run("break services", func(t *testing.T) {
 		var a = Application{
-			holdOn:   make(chan struct{}),
+			halt:     make(chan struct{}),
 			done:     make(chan struct{}),
 			appState: appStateInit,
 			Resources: &ServiceKeeper{
@@ -273,7 +273,7 @@ func TestApplication_Run(t *testing.T) {
 				},
 				PingPeriod: time.Millisecond * 25,
 			},
-			MainFunc: func(ctx context.Context, holdOn <-chan struct{}) error {
+			MainFunc: func(context.Context, <-chan struct{}) error {
 				<-time.After(time.Second * 100)
 				return nil
 			},
@@ -288,7 +288,7 @@ func TestApplication_Shutdown(t *testing.T) {
 	t.Parallel()
 	checkBothChannels := func(app Application) error {
 		select {
-		case <-app.holdOn:
+		case <-app.halt:
 			select {
 			case <-app.done:
 				// good case
@@ -297,7 +297,7 @@ func TestApplication_Shutdown(t *testing.T) {
 				return errors.New("not doned")
 			}
 		default:
-			return errors.New("not holded on")
+			return errors.New("not halted")
 		}
 	}
 	type testCase struct {
@@ -310,7 +310,7 @@ func TestApplication_Shutdown(t *testing.T) {
 		{
 			name: "implicit shutdown",
 			app: Application{
-				MainFunc: func(ctx context.Context, holdOn <-chan struct{}) error {
+				MainFunc: func(context.Context, <-chan struct{}) error {
 					// exit with Shutdown automatic call
 					return nil
 				},
@@ -319,14 +319,14 @@ func TestApplication_Shutdown(t *testing.T) {
 			check:     checkBothChannels,
 		},
 		{
-			name: "shutdown after holding on",
+			name: "shutdown after halt",
 			app: Application{
-				MainFunc: func(ctx context.Context, holdOn <-chan struct{}) error {
+				MainFunc: func(ctx context.Context, halt <-chan struct{}) error {
 					go func() {
 						<-time.After(time.Millisecond * 5)
-						ctx.Value(AppContext{}).(*Application).HoldOn()
+						ctx.Value(AppContext{}).(*Application).Halt()
 					}()
-					<-holdOn
+					<-halt
 					return nil
 				},
 			},
@@ -336,12 +336,12 @@ func TestApplication_Shutdown(t *testing.T) {
 		{
 			name: "explicit shutdown",
 			app: Application{
-				MainFunc: func(ctx context.Context, holdOn <-chan struct{}) error {
+				MainFunc: func(ctx context.Context, halt <-chan struct{}) error {
 					go func() {
 						<-time.After(time.Millisecond * 5)
 						ctx.Value(AppContext{}).(*Application).Shutdown()
 					}()
-					<-holdOn
+					<-halt
 					return nil
 				},
 			},
@@ -364,12 +364,12 @@ func TestApplication_Shutdown(t *testing.T) {
 	t.Run("wrong state", func(t *testing.T) {
 		var result = false
 		var a = Application{
-			holdOn:   make(chan struct{}),
+			halt:     make(chan struct{}),
 			done:     make(chan struct{}),
 			appState: appStateInit,
-			MainFunc: func(ctx context.Context, holdOn <-chan struct{}) error {
+			MainFunc: func(ctx context.Context, halt <-chan struct{}) error {
 				result = true
-				<-holdOn
+				<-halt
 				t.Error(errors.New("test error"))
 				return nil
 			},
@@ -379,23 +379,23 @@ func TestApplication_Shutdown(t *testing.T) {
 			t.Error("no any action expected")
 		}
 		select {
-		case <-a.holdOn:
-			t.Error("holdOn channel closed")
+		case <-a.halt:
+			t.Error("halt channel closed")
 		case <-a.done:
 			t.Error("done channel closed")
 		default:
 			// good case
 		}
 	})
-	t.Run("holdOn state", func(t *testing.T) {
+	t.Run("halt state", func(t *testing.T) {
 		var result = false
 		var a = Application{
-			holdOn:   make(chan struct{}),
+			halt:     make(chan struct{}),
 			done:     make(chan struct{}),
-			appState: appStateHoldOn,
-			MainFunc: func(ctx context.Context, holdOn <-chan struct{}) error {
+			appState: appStateHalt,
+			MainFunc: func(ctx context.Context, halt <-chan struct{}) error {
 				result = true
-				<-holdOn
+				<-halt
 				t.Error(errors.New("test error"))
 				return nil
 			},
@@ -405,8 +405,8 @@ func TestApplication_Shutdown(t *testing.T) {
 			t.Error("no any action expected")
 		}
 		select {
-		case <-a.holdOn:
-			t.Error("holdOn channel closed")
+		case <-a.halt:
+			t.Error("halt channel closed")
 		default:
 			select {
 			case <-a.done:
@@ -434,7 +434,7 @@ func TestApplication_Shutdown(t *testing.T) {
 func TestApplication_Value(t *testing.T) {
 	t.Parallel()
 	var a = Application{
-		MainFunc: func(ctx context.Context, holdOn <-chan struct{}) error {
+		MainFunc: func(ctx context.Context, halt <-chan struct{}) error {
 			if _, ok := ctx.Value(AppContext{}).(*Application); !ok {
 				t.Error("wrong context")
 			}
@@ -510,10 +510,10 @@ func TestApplication_run(t *testing.T) {
 		var status int32
 		var a = Application{
 			appState: appStateRunning,
-			holdOn:   make(chan struct{}),
+			halt:     make(chan struct{}),
 			done:     make(chan struct{}),
-			MainFunc: func(ctx context.Context, holdOn <-chan struct{}) error {
-				<-holdOn
+			MainFunc: func(ctx context.Context, halt <-chan struct{}) error {
+				<-halt
 				atomic.CompareAndSwapInt32(&status, 1, 2)
 				return nil
 			},
@@ -528,13 +528,13 @@ func TestApplication_run(t *testing.T) {
 		go func() {
 			<-time.After(time.Millisecond * 100)
 			select {
-			case <-a.holdOn:
+			case <-a.halt:
 				return
 			case <-a.done:
 				return
 			default:
 				t.Error("timeout")
-				close(a.holdOn)
+				close(a.halt)
 				close(a.done)
 			}
 		}()
@@ -549,9 +549,9 @@ func TestApplication_run(t *testing.T) {
 		var status int32
 		var a = Application{
 			appState: appStateRunning,
-			holdOn:   make(chan struct{}),
+			halt:     make(chan struct{}),
 			done:     make(chan struct{}),
-			MainFunc: func(ctx context.Context, holdOn <-chan struct{}) error {
+			MainFunc: func(ctx context.Context, halt <-chan struct{}) error {
 				<-time.After(time.Second * 30)
 				atomic.CompareAndSwapInt32(&status, 0, 2) // never happens
 				return nil
@@ -566,7 +566,7 @@ func TestApplication_run(t *testing.T) {
 		go func() {
 			<-time.After(time.Millisecond * 500)
 			select {
-			case <-a.holdOn:
+			case <-a.halt:
 				return
 			case <-a.done:
 				return
@@ -585,9 +585,9 @@ func TestApplication_run(t *testing.T) {
 		var status int32
 		var a = Application{
 			appState: appStateRunning,
-			holdOn:   make(chan struct{}),
+			halt:     make(chan struct{}),
 			done:     make(chan struct{}),
-			MainFunc: func(ctx context.Context, holdOn <-chan struct{}) error {
+			MainFunc: func(context.Context, <-chan struct{}) error {
 				atomic.CompareAndSwapInt32(&status, 0, 1)
 				return nil
 			},
@@ -601,7 +601,7 @@ func TestApplication_run(t *testing.T) {
 				return
 			default:
 				t.Error("timeout")
-				close(a.holdOn)
+				close(a.halt)
 				close(a.done)
 			}
 		}()
@@ -616,9 +616,9 @@ func TestApplication_run(t *testing.T) {
 		var status int32
 		var a = Application{
 			appState: appStateRunning,
-			holdOn:   make(chan struct{}),
+			halt:     make(chan struct{}),
 			done:     make(chan struct{}),
-			MainFunc: func(ctx context.Context, holdOn <-chan struct{}) error {
+			MainFunc: func(context.Context, <-chan struct{}) error {
 				atomic.CompareAndSwapInt32(&status, 0, 1)
 				return errors.New("error")
 			},
@@ -632,7 +632,7 @@ func TestApplication_run(t *testing.T) {
 				return
 			default:
 				t.Error("timeout")
-				close(a.holdOn)
+				close(a.halt)
 				close(a.done)
 			}
 		}()
@@ -651,7 +651,7 @@ func TestApplication_setError(t *testing.T) {
 		var e = errors.New("test 1")
 		var a = Application{
 			appState: appStateRunning,
-			holdOn:   make(chan struct{}),
+			halt:     make(chan struct{}),
 			done:     make(chan struct{}),
 		}
 		a.setError(e)
@@ -663,7 +663,7 @@ func TestApplication_setError(t *testing.T) {
 		var e error
 		var a = Application{
 			appState: appStateRunning,
-			holdOn:   make(chan struct{}),
+			halt:     make(chan struct{}),
 			done:     make(chan struct{}),
 		}
 		a.setError(e)
@@ -675,7 +675,7 @@ func TestApplication_setError(t *testing.T) {
 		var e = errors.New("test error 2")
 		var a = Application{
 			appState: appStateRunning,
-			holdOn:   make(chan struct{}),
+			halt:     make(chan struct{}),
 			done:     make(chan struct{}),
 		}
 		var wg sync.WaitGroup
@@ -727,7 +727,7 @@ func TestApplication_init(t *testing.T) {
 		if a.InitializationTimeout != defaultInitializationTimeout || a.TerminationTimeout != defaultTerminationTimeout {
 			t.Error("incorrect default values")
 		}
-		if a.done == nil || a.holdOn == nil {
+		if a.done == nil || a.halt == nil {
 			t.Error("channels is not initialized")
 		}
 	})
