@@ -76,7 +76,7 @@ func (s *ServiceKeeper) Init(ctx context.Context) error {
 	return nil
 }
 
-func (s *ServiceKeeper) testServices(ctx context.Context) (testError error) {
+func (s *ServiceKeeper) testServices(ctx context.Context) error {
 	var ctxPing, cancel = context.WithTimeout(ctx, s.PingTimeout)
 	defer cancel()
 	var p parallelRun
