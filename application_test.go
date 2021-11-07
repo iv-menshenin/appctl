@@ -12,6 +12,31 @@ import (
 	"time"
 )
 
+type (
+	brokenPingService      struct{}
+	brokenPingServiceError struct{}
+)
+
+func (*brokenPingService) Init(context.Context) error {
+	return nil
+}
+
+func (*brokenPingService) Watch(context.Context) error {
+	<-make(chan struct{})
+	return nil
+}
+
+func (*brokenPingService) Stop() {
+}
+
+func (*brokenPingService) Release() error {
+	return brokenPingServiceError{}
+}
+
+func (brokenPingServiceError) Error() string {
+	return "brokenPingServiceError"
+}
+
 func TestApplication_Deadline(t *testing.T) {
 	t.Parallel()
 	var a Application
@@ -383,6 +408,19 @@ func TestApplication_Shutdown(t *testing.T) {
 			}
 		}
 	})
+	t.Run("bad resources release", func(t *testing.T) {
+		var a = Application{
+			Resources: &brokenPingService{},
+			MainFunc: func(context.Context, <-chan struct{}) error {
+				return nil
+			},
+			TerminationTimeout: time.Millisecond * 5,
+		}
+		err := a.Run()
+		if !errors.Is(err, brokenPingServiceError{}) {
+			t.Errorf("need brokenPingServiceError, got: %v", err)
+		}
+	})
 }
 
 func TestApplication_Value(t *testing.T) {
@@ -526,8 +564,6 @@ func TestApplication_run(t *testing.T) {
 				return
 			default:
 				t.Error("test timeout")
-				close(a.holdOn)
-				close(a.done)
 			}
 		}()
 		if err := a.run(sig); err != ErrTermTimeout {

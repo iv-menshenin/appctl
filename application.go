@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"os/signal"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -42,6 +43,7 @@ type (
 		InitializationTimeout time.Duration
 
 		appState int32
+		mux      sync.Mutex
 		err      error
 		holdOn   chan struct{}
 		done     chan struct{}
@@ -81,30 +83,36 @@ func (a *Application) init() error {
 }
 
 func (a *Application) run(sig <-chan os.Signal) error {
-	var errCh = make(chan error, 3)
+	var errRun = make(chan error)
 	go func() {
-		defer close(errCh)
+		defer close(errRun)
 		if err := a.MainFunc(a, a.holdOn); err != nil {
-			errCh <- err
+			errRun <- err
 		}
 		a.Shutdown()
 	}()
+	var errHld = make(chan error)
 	go func() {
+		defer close(errHld)
 		<-sig // wait for os signal
 		a.HoldOn()
 		// In this mode, the main thread should stop accepting new requests, terminate all current requests, and exit.
 		// Exiting the procedure of the main thread will lead to an implicit call Shutdown(),
 		// if this does not happen, we will make an explicit call through the shutdown timeout
 		<-time.After(a.TerminationTimeout)
-		errCh <- ErrTermTimeout
+		errHld <- ErrTermTimeout
 	}()
 	select {
-	case err, ok := <-errCh:
+	case err, ok := <-errRun:
+		if ok && err != nil {
+			return err
+		}
+	case err, ok := <-errHld:
 		if ok && err != nil {
 			return err
 		}
 	case <-a.done:
-		// normal exit
+		// shutdown
 	}
 	return nil
 }
@@ -117,10 +125,20 @@ func (a *Application) setError(err error) {
 	if err == nil {
 		return
 	}
-	if a.checkState(appStateRunning, appStateHoldOn) {
+	a.mux.Lock()
+	if a.err == nil {
 		a.err = err
 	}
+	a.mux.Unlock()
 	a.Shutdown()
+}
+
+func (a *Application) getError() error {
+	var err error
+	a.mux.Lock()
+	err = a.err
+	a.mux.Unlock()
+	return err
 }
 
 // Run starts the execution of the main application thread with the MainFunc function.
@@ -152,10 +170,13 @@ func (a *Application) Run() error {
 		// shutdown
 		if a.Resources != nil {
 			a.Resources.Stop()
-			<-servicesRunning
+			select {
+			case <-servicesRunning:
+			case <-time.After(a.TerminationTimeout):
+			}
 			a.setError(a.Resources.Release())
 		}
-		return a.err
+		return a.getError()
 	}
 	return ErrWrongState
 }
