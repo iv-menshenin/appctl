@@ -94,13 +94,23 @@ func (a *Application) run(sig <-chan os.Signal) error {
 	var errHld = make(chan error, 1)
 	go func() {
 		defer close(errHld)
-		<-sig // wait for os signal
-		a.HoldOn()
-		// In this mode, the main thread should stop accepting new requests, terminate all current requests, and exit.
-		// Exiting the procedure of the main thread will lead to an implicit call Shutdown(),
-		// if this does not happen, we will make an explicit call through the shutdown timeout
-		<-time.After(a.TerminationTimeout)
-		errHld <- ErrTermTimeout
+		select {
+		// wait for os signal
+		case <-sig:
+			a.HoldOn()
+			// In this mode, the main thread should stop accepting new requests, terminate all current requests, and exit.
+			// Exiting the procedure of the main thread will lead to an implicit call Shutdown(),
+			// if this does not happen, we will make an explicit call through the shutdown timeout
+			select {
+			case <-time.After(a.TerminationTimeout):
+				errHld <- ErrTermTimeout
+			case <-a.done:
+				// ok
+			}
+		// if shutdown
+		case <-a.done:
+			// exit immediately
+		}
 	}()
 	select {
 	case err, ok := <-errRun:
