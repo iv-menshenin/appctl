@@ -110,7 +110,10 @@ func (s *ServiceKeeper) Watch(ctx context.Context) error {
 	if !s.checkState(appStateReady, appStateRunning) {
 		return ErrWrongState
 	}
-	return s.cycleTestServices(ctx)
+	if err := s.cycleTestServices(ctx); err != nil && err != ErrShutdown {
+		return err
+	}
+	return nil
 }
 
 // Stop sends a signal that monitoring should be stopped. Stops execution of the Watch procedure
