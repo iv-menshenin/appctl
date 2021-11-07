@@ -83,7 +83,7 @@ func (a *Application) init() error {
 }
 
 func (a *Application) run(sig <-chan os.Signal) error {
-	var errRun = make(chan error)
+	var errRun = make(chan error, 1)
 	go func() {
 		defer close(errRun)
 		if err := a.MainFunc(a, a.holdOn); err != nil {
@@ -91,7 +91,7 @@ func (a *Application) run(sig <-chan os.Signal) error {
 		}
 		a.Shutdown()
 	}()
-	var errHld = make(chan error)
+	var errHld = make(chan error, 1)
 	go func() {
 		defer close(errHld)
 		<-sig // wait for os signal
