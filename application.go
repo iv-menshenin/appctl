@@ -209,12 +209,11 @@ func (a *Application) Done() <-chan struct{} {
 // Err returns error when application is closed.
 // If Done is not yet closed, Err returns nil. If Done is closed, Err returns ErrShutdown.
 func (a *Application) Err() error {
-	if atomic.LoadInt32(&a.appState) == appStateShutdown {
-		err := a.getError()
-		if err == nil {
-			return ErrShutdown
-		}
+	if err := a.getError(); err != nil {
 		return err
+	}
+	if atomic.LoadInt32(&a.appState) == appStateShutdown {
+		return ErrShutdown
 	}
 	return nil
 }

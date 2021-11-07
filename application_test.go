@@ -106,6 +106,14 @@ func TestApplication_Err(t *testing.T) {
 			needErr: ErrShutdown,
 		},
 		{
+			name: "application.err in status",
+			app: Application{
+				appState: appStateInit,
+				err:      io.EOF,
+			},
+			needErr: io.EOF,
+		},
+		{
 			name: "application.err",
 			app: Application{
 				appState: appStateShutdown,
