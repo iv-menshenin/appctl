@@ -64,7 +64,7 @@ type (
 )
 
 func newVacanciesRequest(ctx context.Context, text string, offset, limit int) (*http.Request, error) {
-	URL, err := url.Parse(serviceURL)
+	URL, err := url.ParseRequestURI(serviceURL)
 	if err != nil {
 		return nil, err
 	}
