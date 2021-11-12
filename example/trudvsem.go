@@ -83,11 +83,7 @@ func (t *trudVsem) getData(ctx context.Context, text string, offset, limit int) 
 	if err != nil {
 		return err
 	}
-	var client = http.DefaultClient
-	if t.client != nil {
-		client = t.client
-	}
-	resp, err := client.Do(req)
+	resp, err := t.client.Do(req)
 	if err != nil {
 		return err
 	}
@@ -118,9 +114,8 @@ func (t *trudVsem) parseResponseData(resp *http.Response) error {
 
 func (t *trudVsem) Init(context.Context) error {
 	rand.Seed(time.Now().UnixNano())
-	t.mux.Lock()
+	t.client = http.DefaultClient
 	t.vacancies = make([]Vacancy, 0, prefetchCount)
-	t.mux.Unlock()
 	return nil
 }
 
