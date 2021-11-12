@@ -63,6 +63,12 @@ type (
 	}
 )
 
+const hoursInWeek = 168
+
+func modifiedFrom() string {
+	return time.Now().Add(-time.Hour * hoursInWeek).UTC().Format(time.RFC3339)
+}
+
 func newVacanciesRequest(ctx context.Context, text string, offset, limit int) (*http.Request, error) {
 	URL, err := url.ParseRequestURI(serviceURL)
 	if err != nil {
@@ -72,7 +78,7 @@ func newVacanciesRequest(ctx context.Context, text string, offset, limit int) (*
 		"text":         []string{text},
 		"offset":       []string{strconv.Itoa(offset)},
 		"limit":        []string{strconv.Itoa(limit)},
-		"modifiedFrom": []string{time.Now().Add(-time.Hour * 168).UTC().Format(time.RFC3339)},
+		"modifiedFrom": []string{modifiedFrom()},
 	}
 	URL.RawQuery = query.Encode()
 	return http.NewRequestWithContext(ctx, http.MethodGet, URL.String(), http.NoBody)
@@ -93,8 +99,7 @@ func (t *trudVsem) loadLastVacancies(ctx context.Context, text string, offset, l
 }
 
 func parseResponseData(resp *http.Response) (result Response, err error) {
-	dec := json.NewDecoder(resp.Body)
-	if err = dec.Decode(&result); err != nil {
+	if err = json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return
 	}
 	if result.Status != "200" {
