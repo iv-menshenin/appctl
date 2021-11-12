@@ -7,7 +7,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"sync"
 	"time"
 
 	"github.com/iv-menshenin/appctl"
@@ -20,7 +19,6 @@ func logError(err error) {
 }
 
 type server struct {
-	server   http.Server
 	trudVsem trudVsem
 }
 
@@ -59,54 +57,52 @@ func (s *server) getVacancy() ([]byte, error) {
 	return w.Bytes(), nil
 }
 
+func (s *server) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
+	data, err := s.getVacancy()
+	if err != nil {
+		logError(err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	if len(data) == 0 {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	w.Header().Add("Content-Type", "text/html;charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	if _, err = w.Write(data); err != nil {
+		logError(err)
+	}
+}
+
 func (s *server) appStart(ctx context.Context, halt <-chan struct{}) error {
-	var wg sync.WaitGroup
-	s.server = http.Server{
-		Addr: ":8900",
-		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			wg.Add(1)
-			defer wg.Done()
-			select {
-			case <-halt:
-				w.WriteHeader(http.StatusServiceUnavailable)
-			default:
-				data, err := s.getVacancy()
-				if err != nil {
-					logError(err)
-					w.WriteHeader(http.StatusInternalServerError)
-					return
-				}
-				if len(data) == 0 {
-					w.WriteHeader(http.StatusNoContent)
-					return
-				}
-				w.Header().Add("Content-Type", "text/html;charset=utf-8")
-				w.WriteHeader(http.StatusOK)
-				if _, err = w.Write(data); err != nil {
-					logError(err)
-				}
-			}
-		}),
+	var httpServer = http.Server{
+		Addr:              ":8900",
+		Handler:           s,
 		ReadTimeout:       time.Millisecond * 250,
 		ReadHeaderTimeout: time.Millisecond * 200,
 		WriteTimeout:      time.Second * 30,
 		IdleTimeout:       time.Minute * 30,
-		MaxHeaderBytes:    1024 * 512,
 		BaseContext: func(_ net.Listener) context.Context {
 			return ctx
 		},
-		ConnContext: func(ctx context.Context, c net.Conn) context.Context {
-			return ctx
-		},
 	}
+	var errShutdown = make(chan error, 1)
 	go func() {
-		<-halt
-		wg.Wait()
-		if err := s.server.Close(); err != nil {
-			logError(err)
+		defer close(errShutdown)
+		select {
+		case <-halt:
+		case <-ctx.Done():
+		}
+		if err := httpServer.Shutdown(ctx); err != nil {
+			errShutdown <- err
 		}
 	}()
-	if err := s.server.ListenAndServe(); err != http.ErrServerClosed {
+	if err := httpServer.ListenAndServe(); err != http.ErrServerClosed {
+		return err
+	}
+	err, ok := <-errShutdown
+	if ok {
 		return err
 	}
 	return nil
@@ -118,13 +114,13 @@ func main() {
 		Services: []appctl.Service{
 			&srv.trudVsem,
 		},
-		ShutdownTimeout: time.Millisecond * 800,
+		ShutdownTimeout: time.Second * 10,
 		PingPeriod:      time.Millisecond * 500,
 	}
 	var app = appctl.Application{
 		MainFunc:           srv.appStart,
 		Resources:          &svc,
-		TerminationTimeout: time.Millisecond * 500,
+		TerminationTimeout: time.Second * 10,
 	}
 	if err := app.Run(); err != nil {
 		logError(err)
