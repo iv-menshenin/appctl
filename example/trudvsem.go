@@ -63,7 +63,7 @@ type (
 	}
 )
 
-func makeReq(ctx context.Context, text string, offset, limit int) (*http.Request, error) {
+func newVacanciesRequest(ctx context.Context, text string, offset, limit int) (*http.Request, error) {
 	URL, err := url.Parse(serviceURL)
 	if err != nil {
 		return nil, err
@@ -79,7 +79,7 @@ func makeReq(ctx context.Context, text string, offset, limit int) (*http.Request
 }
 
 func (t *trudVsem) loadLastVacancies(ctx context.Context, text string, offset, limit int) ([]VacancyRec, error) {
-	req, err := makeReq(ctx, text, offset, limit)
+	req, err := newVacanciesRequest(ctx, text, offset, limit)
 	if err != nil {
 		return nil, err
 	}
