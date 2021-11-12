@@ -21,7 +21,7 @@ const (
 
 type (
 	trudVsem struct {
-		mux         sync.Mutex
+		mux         sync.RWMutex
 		requestTime time.Time
 		client      *http.Client
 		vacancies   []Vacancy
@@ -141,8 +141,8 @@ func (t *trudVsem) Close() error {
 }
 
 func (t *trudVsem) GetRandom() (vacancy Vacancy, ok bool) {
-	t.mux.Lock()
-	defer t.mux.Unlock()
+	t.mux.RLock()
+	defer t.mux.RUnlock()
 	if ok = len(t.vacancies) > 0; !ok {
 		return
 	}
