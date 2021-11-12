@@ -22,11 +22,7 @@ type server struct {
 	trudVsem trudVsem
 }
 
-func (s *server) getVacancy() ([]byte, error) {
-	vacancy, ok := s.trudVsem.GetRandom()
-	if !ok {
-		return nil, nil
-	}
+func renderVacancy(vacancy Vacancy) ([]byte, error) {
 	var b []byte
 	var w = bytes.NewBuffer(b)
 	if _, err := w.WriteString(fmt.Sprintf("<h3>%s (%s)</h3>", vacancy.JobName, vacancy.Region.Name)); err != nil {
@@ -58,14 +54,15 @@ func (s *server) getVacancy() ([]byte, error) {
 }
 
 func (s *server) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
-	data, err := s.getVacancy()
+	vacancy, ok := s.trudVsem.GetRandom()
+	if !ok {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	data, err := renderVacancy(vacancy)
 	if err != nil {
 		logError(err)
 		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-	if len(data) == 0 {
-		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 	w.Header().Add("Content-Type", "text/html;charset=utf-8")
