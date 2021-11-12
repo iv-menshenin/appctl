@@ -78,38 +78,47 @@ func makeReq(ctx context.Context, text string, offset, limit int) (*http.Request
 	return http.NewRequestWithContext(ctx, http.MethodGet, URL.String(), http.NoBody)
 }
 
-func (t *trudVsem) getData(ctx context.Context, text string, offset, limit int) error {
+func (t *trudVsem) loadLastVacancies(ctx context.Context, text string, offset, limit int) ([]VacancyRec, error) {
 	req, err := makeReq(ctx, text, offset, limit)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	resp, err := t.client.Do(req)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer resp.Body.Close()
-	return t.parseResponseData(resp)
+	parsed, err := t.parseResponseData(resp)
+	return parsed.Results.Vacancies, err
 }
 
-func (t *trudVsem) parseResponseData(resp *http.Response) error {
+func (t *trudVsem) parseResponseData(resp *http.Response) (result Response, err error) {
 	dec := json.NewDecoder(resp.Body)
-	var result Response
-	if err := dec.Decode(&result); err != nil {
-		return err
+	if err = dec.Decode(&result); err != nil {
+		return
 	}
 	if result.Status != "200" {
-		return errors.New("wrong response status")
+		err = errors.New("wrong response status")
+		return
 	}
 	if len(result.Results.Vacancies) == 0 {
-		return io.EOF
+		err = io.EOF
+	}
+	return
+}
+
+func (t *trudVsem) refresh() {
+	vacancies, err := t.loadLastVacancies(context.Background(), "golang", 0, prefetchCount)
+	if err != nil {
+		log.Println(err)
+		return
 	}
 	t.mux.Lock()
 	t.vacancies = t.vacancies[:0]
-	for _, v := range result.Results.Vacancies {
+	for _, v := range vacancies {
 		t.vacancies = append(t.vacancies, v.Vacancy)
 	}
 	t.mux.Unlock()
-	return nil
 }
 
 func (t *trudVsem) Init(context.Context) error {
@@ -129,12 +138,6 @@ func (t *trudVsem) Ping(context.Context) error {
 
 func (t *trudVsem) Close() error {
 	return nil
-}
-
-func (t *trudVsem) refresh() {
-	if err := t.getData(context.Background(), "golang", 0, prefetchCount); err != nil {
-		log.Println(err)
-	}
 }
 
 func (t *trudVsem) GetRandom() (vacancy Vacancy, ok bool) {
