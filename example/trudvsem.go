@@ -88,11 +88,11 @@ func (t *trudVsem) loadLastVacancies(ctx context.Context, text string, offset, l
 		return nil, err
 	}
 	defer resp.Body.Close()
-	parsed, err := t.parseResponseData(resp)
+	parsed, err := parseResponseData(resp)
 	return parsed.Results.Vacancies, err
 }
 
-func (t *trudVsem) parseResponseData(resp *http.Response) (result Response, err error) {
+func parseResponseData(resp *http.Response) (result Response, err error) {
 	dec := json.NewDecoder(resp.Body)
 	if err = dec.Decode(&result); err != nil {
 		return
