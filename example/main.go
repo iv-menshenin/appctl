@@ -54,7 +54,7 @@ func renderVacancy(vacancy Vacancy) ([]byte, error) {
 }
 
 func (s *server) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
-	vacancy, ok := s.trudVsem.GetRandom()
+	vacancy, ok := s.trudVsem.GetRandomVacancy()
 	if !ok {
 		w.WriteHeader(http.StatusNoContent)
 		return

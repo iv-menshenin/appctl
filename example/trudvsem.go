@@ -145,7 +145,7 @@ func (t *trudVsem) Close() error {
 	return nil
 }
 
-func (t *trudVsem) GetRandom() (vacancy Vacancy, ok bool) {
+func (t *trudVsem) GetRandomVacancy() (vacancy Vacancy, ok bool) {
 	t.mux.RLock()
 	defer t.mux.RUnlock()
 	if ok = len(t.vacancies) > 0; !ok {
