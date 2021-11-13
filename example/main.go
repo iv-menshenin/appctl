@@ -23,8 +23,7 @@ type server struct {
 }
 
 func renderVacancy(vacancy Vacancy) ([]byte, error) {
-	var b []byte
-	var w = bytes.NewBuffer(b)
+	var w = bytes.NewBuffer(nil)
 	if _, err := w.WriteString(fmt.Sprintf("<h3>%s (%s)</h3>", vacancy.JobName, vacancy.Region.Name)); err != nil {
 		return nil, err
 	}
