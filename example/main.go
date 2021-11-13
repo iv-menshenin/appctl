@@ -14,7 +14,7 @@ import (
 
 func logError(err error) {
 	if err = fmt.Errorf("%w", err); err != nil {
-		println(err.Error())
+		println(err)
 	}
 }
 
