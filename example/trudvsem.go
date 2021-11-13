@@ -113,7 +113,7 @@ func parseResponseData(resp *http.Response) (result Response, err error) {
 }
 
 func (t *trudVsem) refresh() {
-	vacancies, err := t.loadLastVacancies(context.Background(), "golang", 0, prefetchCount)
+	vacancies, err := t.loadLastVacancies(context.Background(), "программист", 0, prefetchCount)
 	if err != nil {
 		log.Println(err)
 		return
