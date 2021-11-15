@@ -63,6 +63,40 @@ const (
 	defaultInitializationTimeout = time.Second * 15
 )
 
+// Run starts the execution of the main application thread with the MainFunc function.
+// Returns an error if the execution of the application ended abnormally, otherwise it will return a nil.
+func (a *Application) Run() error {
+	if a.MainFunc == nil {
+		return ErrMainOmitted
+	}
+	if a.checkState(appStateInit, appStateRunning) {
+		if err := a.init(); err != nil {
+			a.err = err
+			a.appState = appStateShutdown
+			return err
+		}
+		var servicesRunning = make(chan struct{})
+		if a.Resources != nil {
+			go a.watchResources(servicesRunning)
+		}
+		sig := make(chan os.Signal, 1)
+		signal.Notify(sig, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
+		// main thread execution
+		a.setError(a.run(sig))
+		// shutdown
+		if a.Resources != nil {
+			a.Resources.Stop()
+			select {
+			case <-servicesRunning:
+			case <-time.After(a.TerminationTimeout):
+			}
+			a.setError(a.Resources.Release())
+		}
+		return a.getError()
+	}
+	return ErrWrongState
+}
+
 func (a *Application) init() error {
 	if a.TerminationTimeout == 0 {
 		a.TerminationTimeout = defaultTerminationTimeout
@@ -78,6 +112,14 @@ func (a *Application) init() error {
 		return a.Resources.Init(ctx)
 	}
 	return nil
+}
+
+func (a *Application) watchResources(servicesRunning chan<- struct{}) {
+	defer close(servicesRunning)
+	// if the stop is due to the correct stop of services without any error,
+	// we still have to stop the application
+	defer a.Shutdown()
+	a.setError(a.Resources.Watch(a))
 }
 
 func (a *Application) run(sig <-chan os.Signal) error {
@@ -125,70 +167,6 @@ func (a *Application) run(sig <-chan os.Signal) error {
 	return nil
 }
 
-func (a *Application) checkState(old, new int32) bool {
-	return atomic.CompareAndSwapInt32(&a.appState, old, new)
-}
-
-func (a *Application) setError(err error) {
-	if err == nil {
-		return
-	}
-	a.mux.Lock()
-	if a.err == nil {
-		a.err = err
-	}
-	a.mux.Unlock()
-	a.Shutdown()
-}
-
-func (a *Application) getError() error {
-	var err error
-	a.mux.Lock()
-	err = a.err
-	a.mux.Unlock()
-	return err
-}
-
-// Run starts the execution of the main application thread with the MainFunc function.
-// Returns an error if the execution of the application ended abnormally, otherwise it will return a nil.
-func (a *Application) Run() error {
-	if a.MainFunc == nil {
-		return ErrMainOmitted
-	}
-	if a.checkState(appStateInit, appStateRunning) {
-		if err := a.init(); err != nil {
-			a.err = err
-			a.appState = appStateShutdown
-			return err
-		}
-		var servicesRunning = make(chan struct{})
-		if a.Resources != nil {
-			go func() {
-				defer close(servicesRunning)
-				// if the stop is due to the correct stop of services without any error,
-				// we still have to stop the application
-				defer a.Shutdown()
-				a.setError(a.Resources.Watch(a))
-			}()
-		}
-		sig := make(chan os.Signal, 1)
-		signal.Notify(sig, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
-		// main thread execution
-		a.setError(a.run(sig))
-		// shutdown
-		if a.Resources != nil {
-			a.Resources.Stop()
-			select {
-			case <-servicesRunning:
-			case <-time.After(a.TerminationTimeout):
-			}
-			a.setError(a.Resources.Release())
-		}
-		return a.getError()
-	}
-	return ErrWrongState
-}
-
 // Halt signals the application to terminate the current computational processes and prepare to stop the application.
 func (a *Application) Halt() {
 	if a.checkState(appStateRunning, appStateHalt) {
@@ -233,4 +211,28 @@ func (a *Application) Value(key interface{}) interface{} {
 		return a
 	}
 	return nil
+}
+
+func (a *Application) getError() error {
+	var err error
+	a.mux.Lock()
+	err = a.err
+	a.mux.Unlock()
+	return err
+}
+
+func (a *Application) setError(err error) {
+	if err == nil {
+		return
+	}
+	a.mux.Lock()
+	if a.err == nil {
+		a.err = err
+	}
+	a.mux.Unlock()
+	a.Shutdown()
+}
+
+func (a *Application) checkState(old, new int32) bool {
+	return atomic.CompareAndSwapInt32(&a.appState, old, new)
 }

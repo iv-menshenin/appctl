@@ -39,23 +39,7 @@ const (
 	srvStateRunning
 	srvStateShutdown
 	srvStateOff
-)
 
-func (s *ServiceKeeper) checkState(old, new int32) bool {
-	return atomic.CompareAndSwapInt32(&s.state, old, new)
-}
-
-func (s *ServiceKeeper) initAllServices(ctx context.Context) (initError error) {
-	initCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	var p parallelRun
-	for i := range s.Services {
-		p.do(initCtx, s.Services[i].Init)
-	}
-	return p.wait()
-}
-
-const (
 	defaultPingPeriod      = time.Second * 5
 	defaultPingTimeout     = time.Millisecond * 1500
 	defaultShutdownTimeout = time.Millisecond * 15000
@@ -84,6 +68,20 @@ func (s *ServiceKeeper) Init(ctx context.Context) error {
 	return nil
 }
 
+func (s *ServiceKeeper) checkState(old, new int32) bool {
+	return atomic.CompareAndSwapInt32(&s.state, old, new)
+}
+
+func (s *ServiceKeeper) initAllServices(ctx context.Context) (initError error) {
+	initCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	var p parallelRun
+	for i := range s.Services {
+		p.do(initCtx, s.Services[i].Init)
+	}
+	return p.wait()
+}
+
 func (s *ServiceKeeper) testServices(ctx context.Context) error {
 	var ctxPing, cancel = context.WithTimeout(ctx, s.PingTimeout)
 	defer cancel()
@@ -92,21 +90,6 @@ func (s *ServiceKeeper) testServices(ctx context.Context) error {
 		p.do(ctxPing, s.Services[i].Ping)
 	}
 	return p.wait()
-}
-
-func (s *ServiceKeeper) cycleTestServices(ctx context.Context) error {
-	for {
-		select {
-		case <-s.stop:
-			return nil
-		case <-time.After(s.PingPeriod):
-			if err := s.testServices(ctx); err != nil {
-				return err
-			}
-		case <-ctx.Done():
-			return ctx.Err()
-		}
-	}
 }
 
 // Watch monitors the health of resources. At a given frequency, all services will receive a Ping command,
@@ -124,11 +107,33 @@ func (s *ServiceKeeper) Watch(ctx context.Context) error {
 	return nil
 }
 
+func (s *ServiceKeeper) cycleTestServices(ctx context.Context) error {
+	for {
+		select {
+		case <-s.stop:
+			return nil
+		case <-time.After(s.PingPeriod):
+			if err := s.testServices(ctx); err != nil {
+				return err
+			}
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+}
+
 // Stop sends a signal that monitoring should be stopped. Stops execution of the Watch procedure
 func (s *ServiceKeeper) Stop() {
 	if s.checkState(srvStateRunning, srvStateShutdown) {
 		close(s.stop)
 	}
+}
+
+func (s *ServiceKeeper) Release() error {
+	if s.checkState(srvStateShutdown, srvStateOff) {
+		return s.release()
+	}
+	return ErrWrongState
 }
 
 func (s *ServiceKeeper) release() error {
@@ -159,11 +164,4 @@ func (s *ServiceKeeper) release() error {
 			return shCtx.Err()
 		}
 	}
-}
-
-func (s *ServiceKeeper) Release() error {
-	if s.checkState(srvStateShutdown, srvStateOff) {
-		return s.release()
-	}
-	return ErrWrongState
 }
