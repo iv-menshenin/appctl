@@ -1,11 +1,11 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"net"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"time"
 
@@ -22,51 +22,15 @@ type server struct {
 	trudVsem trudVsem
 }
 
-func renderVacancy(vacancy Vacancy) ([]byte, error) {
-	var w = bytes.NewBuffer(nil)
-	if _, err := w.WriteString(fmt.Sprintf("<h3>%s (%s)</h3>", vacancy.JobName, vacancy.Region.Name)); err != nil {
-		return nil, err
-	}
-	if _, err := w.WriteString(fmt.Sprintf("<p class='description'>Компания: %s ищет сотрудника на должность '%s'.</p>", vacancy.Company.Name, vacancy.JobName)); err != nil {
-		return nil, err
-	}
-	if _, err := w.WriteString(fmt.Sprintf("<p class='condition'>Условия: %s, %s.</p>", vacancy.Employment, vacancy.Schedule)); err != nil {
-		return nil, err
-	}
-	if vacancy.SalaryMin != vacancy.SalaryMax && vacancy.SalaryMax != 0 && vacancy.SalaryMin != 0 {
-		if _, err := w.WriteString(fmt.Sprintf("<p class='salary'>зарплата от %0.2f до %0.2f руб.</p>", vacancy.SalaryMin, vacancy.SalaryMax)); err != nil {
-			return nil, err
-		}
-	} else if vacancy.SalaryMax > 0 {
-		if _, err := w.WriteString(fmt.Sprintf("<p class='salary'>зарплата %0.2f руб.</p>", vacancy.SalaryMax)); err != nil {
-			return nil, err
-		}
-	} else if vacancy.SalaryMin > 0 {
-		if _, err := w.WriteString(fmt.Sprintf("<p class='salary'>зарплата %0.2f руб.</p>", vacancy.SalaryMin)); err != nil {
-			return nil, err
-		}
-	}
-	if _, err := w.WriteString(fmt.Sprintf("<a href='%s'>ознакомиться</a>", vacancy.URL)); err != nil {
-		return nil, err
-	}
-	return w.Bytes(), nil
-}
-
 func (s *server) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
 	vacancy, ok := s.trudVsem.GetRandomVacancy()
 	if !ok {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	data, err := renderVacancy(vacancy)
-	if err != nil {
-		logError(err)
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
 	w.Header().Add("Content-Type", "text/html;charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	if _, err = w.Write(data); err != nil {
+	if err := vacancy.RenderTo(w); err != nil {
 		logError(err)
 	}
 }
@@ -105,6 +69,7 @@ func (s *server) appStart(ctx context.Context, halt <-chan struct{}) error {
 }
 
 func main() {
+	go http.ListenAndServe(":9900", nil)
 	var srv server
 	var svc = appctl.ServiceKeeper{
 		Services: []appctl.Service{

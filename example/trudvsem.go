@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"math/rand"
@@ -20,11 +22,12 @@ const (
 )
 
 type (
-	trudVsem struct {
+	VacancyRender []byte
+	trudVsem      struct {
 		mux         sync.RWMutex
 		requestTime time.Time
 		client      *http.Client
-		vacancies   []Vacancy
+		vacancies   []VacancyRender
 	}
 	Meta struct {
 		Total int `json:"total"`
@@ -121,7 +124,10 @@ func (t *trudVsem) refresh() {
 	t.mux.Lock()
 	t.vacancies = t.vacancies[:0]
 	for _, v := range vacancies {
-		t.vacancies = append(t.vacancies, v.Vacancy)
+		var newVacancy = v.Vacancy
+		if rendered, err := newVacancy.renderBytes(); err == nil {
+			t.vacancies = append(t.vacancies, rendered)
+		}
 	}
 	t.mux.Unlock()
 }
@@ -129,7 +135,7 @@ func (t *trudVsem) refresh() {
 func (t *trudVsem) Init(context.Context) error {
 	rand.Seed(time.Now().UnixNano())
 	t.client = http.DefaultClient
-	t.vacancies = make([]Vacancy, 0, prefetchCount)
+	t.vacancies = make([]VacancyRender, 0, prefetchCount)
 	return nil
 }
 
@@ -145,7 +151,7 @@ func (t *trudVsem) Close() error {
 	return nil
 }
 
-func (t *trudVsem) GetRandomVacancy() (vacancy Vacancy, ok bool) {
+func (t *trudVsem) GetRandomVacancy() (vacancy VacancyRender, ok bool) {
 	t.mux.RLock()
 	defer t.mux.RUnlock()
 	if ok = len(t.vacancies) > 0; !ok {
@@ -153,4 +159,65 @@ func (t *trudVsem) GetRandomVacancy() (vacancy Vacancy, ok bool) {
 	}
 	vacancy = t.vacancies[rand.Intn(len(t.vacancies))]
 	return
+}
+
+func (v Vacancy) renderBytes() ([]byte, error) {
+	var w = bytes.NewBufferString("")
+	if err := v.renderHead(w); err != nil {
+		return nil, err
+	}
+	if err := v.renderDesc(w); err != nil {
+		return nil, err
+	}
+	if err := v.renderConditions(w); err != nil {
+		return nil, err
+	}
+	if err := v.renderSalary(w); err != nil {
+		return nil, err
+	}
+	if err := v.renderFooter(w); err != nil {
+		return nil, err
+	}
+	return w.Bytes(), nil
+}
+
+func (v Vacancy) renderHead(w io.StringWriter) error {
+	_, err := w.WriteString(fmt.Sprintf("<h3>%s (%s)</h3>", v.JobName, v.Region.Name))
+	return err
+}
+
+func (v Vacancy) renderDesc(w io.StringWriter) error {
+	_, err := w.WriteString(fmt.Sprintf("<p class='description'>Компания: %s ищет сотрудника на должность '%s'.</p>", v.Company.Name, v.JobName))
+	return err
+}
+
+func (v Vacancy) renderConditions(w io.StringWriter) error {
+	_, err := w.WriteString(fmt.Sprintf("<p class='condition'>Условия: %s, %s.</p>", v.Employment, v.Schedule))
+	return err
+}
+
+func (v Vacancy) renderSalary(w io.StringWriter) error {
+	if v.SalaryMin != v.SalaryMax && v.SalaryMax > 0 && v.SalaryMin > 0 {
+		_, err := w.WriteString(fmt.Sprintf("<p class='salary'>зарплата от %0.2f до %0.2f руб.</p>", v.SalaryMin, v.SalaryMax))
+		return err
+	}
+	if v.SalaryMax > 0 {
+		_, err := w.WriteString(fmt.Sprintf("<p class='salary'>зарплата %0.2f руб.</p>", v.SalaryMax))
+		return err
+	}
+	if v.SalaryMin > 0 {
+		_, err := w.WriteString(fmt.Sprintf("<p class='salary'>зарплата %0.2f руб.</p>", v.SalaryMin))
+		return err
+	}
+	return nil
+}
+
+func (v Vacancy) renderFooter(w io.StringWriter) error {
+	_, err := w.WriteString(fmt.Sprintf("<a href='%s'>ознакомиться</a>", v.URL))
+	return err
+}
+
+func (r VacancyRender) RenderTo(w io.Writer) error {
+	_, err := w.Write(r)
+	return err
 }
