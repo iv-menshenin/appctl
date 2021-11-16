@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	_ "net/http/pprof"
 	"os"
 	"time"
 
@@ -69,7 +68,6 @@ func (s *server) appStart(ctx context.Context, halt <-chan struct{}) error {
 }
 
 func main() {
-	go http.ListenAndServe(":9900", nil)
 	var srv server
 	var svc = appctl.ServiceKeeper{
 		Services: []appctl.Service{
