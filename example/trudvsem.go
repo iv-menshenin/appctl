@@ -66,72 +66,6 @@ type (
 	}
 )
 
-const hoursInWeek = 168
-
-func modifiedFrom() string {
-	return time.Now().Add(-time.Hour * hoursInWeek).UTC().Format(time.RFC3339)
-}
-
-func newVacanciesRequest(ctx context.Context, text string, offset, limit int) (*http.Request, error) {
-	URL, err := url.ParseRequestURI(serviceURL)
-	if err != nil {
-		return nil, err
-	}
-	query := url.Values{
-		"text":         []string{text},
-		"offset":       []string{strconv.Itoa(offset)},
-		"limit":        []string{strconv.Itoa(limit)},
-		"modifiedFrom": []string{modifiedFrom()},
-	}
-	URL.RawQuery = query.Encode()
-	return http.NewRequestWithContext(ctx, http.MethodGet, URL.String(), http.NoBody)
-}
-
-func (t *trudVsem) loadLastVacancies(ctx context.Context, text string, offset, limit int) ([]VacancyRec, error) {
-	req, err := newVacanciesRequest(ctx, text, offset, limit)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := t.client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	parsed, err := parseResponseData(resp)
-	return parsed.Results.Vacancies, err
-}
-
-func parseResponseData(resp *http.Response) (result Response, err error) {
-	if err = json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return
-	}
-	if result.Status != "200" {
-		err = errors.New("wrong response status")
-		return
-	}
-	if len(result.Results.Vacancies) == 0 {
-		err = io.EOF
-	}
-	return
-}
-
-func (t *trudVsem) refresh() {
-	vacancies, err := t.loadLastVacancies(context.Background(), "программист", 0, prefetchCount)
-	if err != nil {
-		log.Println(err)
-		return
-	}
-	t.mux.Lock()
-	t.vacancies = t.vacancies[:0]
-	for _, v := range vacancies {
-		var newVacancy = v.Vacancy
-		if rendered, err := newVacancy.renderBytes(); err == nil {
-			t.vacancies = append(t.vacancies, rendered)
-		}
-	}
-	t.mux.Unlock()
-}
-
 func (t *trudVsem) Init(context.Context) error {
 	rand.Seed(time.Now().UnixNano())
 	t.client = http.DefaultClient
@@ -158,6 +92,72 @@ func (t *trudVsem) GetRandomVacancy() (vacancy VacancyRender, ok bool) {
 		return
 	}
 	vacancy = t.vacancies[rand.Intn(len(t.vacancies))]
+	return
+}
+
+func (t *trudVsem) refresh() {
+	vacancies, err := t.loadLastVacancies(context.Background(), "программист", 0, prefetchCount)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	t.mux.Lock()
+	t.vacancies = t.vacancies[:0]
+	for _, v := range vacancies {
+		var newVacancy = v.Vacancy
+		if rendered, err := newVacancy.renderBytes(); err == nil {
+			t.vacancies = append(t.vacancies, rendered)
+		}
+	}
+	t.mux.Unlock()
+}
+
+func (t *trudVsem) loadLastVacancies(ctx context.Context, text string, offset, limit int) ([]VacancyRec, error) {
+	req, err := newVacanciesRequest(ctx, text, offset, limit)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := t.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	parsed, err := parseResponseData(resp)
+	return parsed.Results.Vacancies, err
+}
+
+func newVacanciesRequest(ctx context.Context, text string, offset, limit int) (*http.Request, error) {
+	URL, err := url.ParseRequestURI(serviceURL)
+	if err != nil {
+		return nil, err
+	}
+	query := url.Values{
+		"text":         []string{text},
+		"offset":       []string{strconv.Itoa(offset)},
+		"limit":        []string{strconv.Itoa(limit)},
+		"modifiedFrom": []string{modifiedFrom()},
+	}
+	URL.RawQuery = query.Encode()
+	return http.NewRequestWithContext(ctx, http.MethodGet, URL.String(), http.NoBody)
+}
+
+const hoursInWeek = 168
+
+func modifiedFrom() string {
+	return time.Now().Add(-time.Hour * hoursInWeek).UTC().Format(time.RFC3339)
+}
+
+func parseResponseData(resp *http.Response) (result Response, err error) {
+	if err = json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return
+	}
+	if result.Status != "200" {
+		err = errors.New("wrong response status")
+		return
+	}
+	if len(result.Results.Vacancies) == 0 {
+		err = io.EOF
+	}
 	return
 }
 
