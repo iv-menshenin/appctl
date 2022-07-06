@@ -21,6 +21,8 @@ type (
 		// Close will be executed when the service controller receives a stop command. Normally, this happens after the
 		// main thread of the application has already finished. That is, no more requests from the outside are expected.
 		Close() error
+		// Ident identifies a particular service to display the sources of failures in the error logs
+		Ident() string
 	}
 	ServiceKeeper struct {
 		Services        []Service
@@ -77,7 +79,7 @@ func (s *ServiceKeeper) initAllServices(ctx context.Context) (initError error) {
 	defer cancel()
 	var p parallelRun
 	for i := range s.Services {
-		p.do(initCtx, s.Services[i].Init)
+		p.do(initCtx, s.Services[i].Ident(), s.Services[i].Init)
 	}
 	return p.wait()
 }
@@ -87,7 +89,7 @@ func (s *ServiceKeeper) testServices(ctx context.Context) error {
 	defer cancel()
 	var p parallelRun
 	for i := range s.Services {
-		p.do(ctxPing, s.Services[i].Ping)
+		p.do(ctxPing, s.Services[i].Ident(), s.Services[i].Ping)
 	}
 	return p.wait()
 }
@@ -142,7 +144,7 @@ func (s *ServiceKeeper) release() error {
 	var p parallelRun
 	for i := range s.Services {
 		var service = s.Services[i]
-		p.do(shCtx, func(_ context.Context) error {
+		p.do(shCtx, service.Ident(), func(_ context.Context) error {
 			return service.Close()
 		})
 	}

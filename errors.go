@@ -38,21 +38,21 @@ type parallelRun struct {
 	err arrError
 }
 
-func (p *parallelRun) do(ctx context.Context, f func(context.Context) error) {
+func (p *parallelRun) do(ctx context.Context, ident string, f func(context.Context) error) {
 	p.wg.Add(1)
 	go func() {
 		defer func() {
 			r := recover()
 			if r != nil {
 				p.mux.Lock()
-				p.err = append(p.err, fmt.Errorf("unhandled error: %v", r))
+				p.err = append(p.err, fmt.Errorf("unhandled error has occurred in the '%s' service: %v", ident, r))
 				p.mux.Unlock()
 			}
 			p.wg.Done()
 		}()
 		if err := f(ctx); err != nil {
 			p.mux.Lock()
-			p.err = append(p.err, fmt.Errorf("%w", err))
+			p.err = append(p.err, fmt.Errorf("error has occurred in the '%s' service: %w", ident, err))
 			p.mux.Unlock()
 		}
 	}()
