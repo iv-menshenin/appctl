@@ -60,8 +60,8 @@ type (
 		Vacancies []VacancyRec `json:"vacancies"`
 	}
 	Response struct {
-		Status  string `json:"status"`
-		Meta    Meta
+		Status  string  `json:"status"`
+		Meta    Meta    `json:"meta"`
 		Results Results `json:"results"`
 	}
 )
@@ -79,6 +79,10 @@ func (t *trudVsem) Ping(context.Context) error {
 		go t.refresh()
 	}
 	return nil
+}
+
+func (t *trudVsem) Ident() string {
+	return "trudvsem.ru"
 }
 
 func (t *trudVsem) Close() error {
@@ -113,20 +117,32 @@ func (t *trudVsem) refresh() {
 }
 
 func (t *trudVsem) loadLastVacancies(ctx context.Context, text string, offset, limit int) ([]VacancyRec, error) {
-	req, err := newVacanciesRequest(ctx, text, offset, limit)
-	if err != nil {
-		return nil, err
+	var weeks = 1
+	for {
+		req, err := newVacanciesRequest(ctx, text, offset, limit, weeks)
+		if err != nil {
+			return nil, err
+		}
+		parsed, err := t.executeRequest(req)
+		if errors.Is(err, ErrEmpty) {
+			<-time.After(5 * time.Second)
+			weeks++
+			continue
+		}
+		return parsed.Results.Vacancies, err
 	}
-	resp, err := t.client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	parsed, err := parseResponseData(resp)
-	return parsed.Results.Vacancies, err
 }
 
-func newVacanciesRequest(ctx context.Context, text string, offset, limit int) (*http.Request, error) {
+func (t *trudVsem) executeRequest(req *http.Request) (result Response, err error) {
+	resp, err := t.client.Do(req)
+	if err != nil {
+		return result, err
+	}
+	defer resp.Body.Close()
+	return parseResponseData(resp)
+}
+
+func newVacanciesRequest(ctx context.Context, text string, offset, limit, weeks int) (*http.Request, error) {
 	URL, err := url.ParseRequestURI(serviceURL)
 	if err != nil {
 		return nil, err
@@ -135,7 +151,7 @@ func newVacanciesRequest(ctx context.Context, text string, offset, limit int) (*
 		"text":         []string{text},
 		"offset":       []string{strconv.Itoa(offset)},
 		"limit":        []string{strconv.Itoa(limit)},
-		"modifiedFrom": []string{modifiedFrom()},
+		"modifiedFrom": []string{modifiedFrom(weeks)},
 	}
 	URL.RawQuery = query.Encode()
 	return http.NewRequestWithContext(ctx, http.MethodGet, URL.String(), http.NoBody)
@@ -143,8 +159,8 @@ func newVacanciesRequest(ctx context.Context, text string, offset, limit int) (*
 
 const hoursInWeek = 168
 
-func modifiedFrom() string {
-	return time.Now().Add(-time.Hour * hoursInWeek).UTC().Format(time.RFC3339)
+func modifiedFrom(weeks int) string {
+	return time.Now().Add(-time.Hour * hoursInWeek * time.Duration(weeks)).UTC().Format(time.RFC3339)
 }
 
 func parseResponseData(resp *http.Response) (result Response, err error) {
@@ -156,10 +172,12 @@ func parseResponseData(resp *http.Response) (result Response, err error) {
 		return
 	}
 	if len(result.Results.Vacancies) == 0 {
-		err = io.EOF
+		err = ErrEmpty
 	}
 	return
 }
+
+var ErrEmpty = errors.New("empty")
 
 func (v Vacancy) renderBytes() ([]byte, error) {
 	var w = bytes.NewBufferString("")
