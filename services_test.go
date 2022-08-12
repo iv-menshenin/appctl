@@ -72,6 +72,10 @@ func (d *dummyService) Close() error {
 	return nil
 }
 
+func (d *dummyService) Ident() string {
+	return "dummy"
+}
+
 func TestServiceKeeper_Init(t *testing.T) {
 	t.Parallel()
 	type fields struct {

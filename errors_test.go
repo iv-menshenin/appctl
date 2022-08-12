@@ -78,19 +78,18 @@ func Test_parallelRun_Do(t *testing.T) {
 	t.Run("expected error", func(t *testing.T) {
 		t.Parallel()
 		var p parallelRun
-		var e = errors.New("test parallel run error")
-		p.do(context.TODO(), func(ctx context.Context) error {
-			return e
+		var expect = errors.New("test parallel run error")
+		p.do(context.TODO(), "test", func(ctx context.Context) error {
+			return expect
 		})
-		expect := arrError{e}
-		if err := p.wait(); err.Error() != expect.Error() {
+		if err := p.wait(); errors.Unwrap(err.(arrError)[0]).Error() != expect.Error() {
 			t.Errorf("expected error '%v', got '%v'", expect, err)
 		}
 	})
 	t.Run("well done", func(t *testing.T) {
 		t.Parallel()
 		var p parallelRun
-		p.do(context.TODO(), func(ctx context.Context) error {
+		p.do(context.TODO(), "test", func(ctx context.Context) error {
 			return nil
 		})
 		if err := p.wait(); err != nil {
@@ -100,7 +99,7 @@ func Test_parallelRun_Do(t *testing.T) {
 	t.Run("catch panic", func(t *testing.T) {
 		t.Parallel()
 		var p parallelRun
-		p.do(context.TODO(), func(ctx context.Context) error {
+		p.do(context.TODO(), "test", func(ctx context.Context) error {
 			panic("bang-bang")
 		})
 		if err := p.wait(); err == nil {
@@ -110,15 +109,14 @@ func Test_parallelRun_Do(t *testing.T) {
 	t.Run("multiple run", func(t *testing.T) {
 		t.Parallel()
 		var p parallelRun
-		var e = errors.New("test parallel run error in multiple")
-		p.do(context.TODO(), func(ctx context.Context) error {
-			return e
+		var expect = errors.New("test parallel run error in multiple")
+		p.do(context.TODO(), "test", func(ctx context.Context) error {
+			return expect
 		})
-		p.do(context.TODO(), func(ctx context.Context) error {
+		p.do(context.TODO(), "test", func(ctx context.Context) error {
 			return nil
 		})
-		expect := arrError{e}
-		if err := p.wait(); err.Error() != expect.Error() {
+		if err := p.wait(); errors.Unwrap(err.(arrError)[0]).Error() != expect.Error() {
 			t.Errorf("expected error '%v', got '%v'", expect, err)
 		}
 	})
@@ -127,13 +125,12 @@ func Test_parallelRun_Do(t *testing.T) {
 func Test_parallelRun_Wait(t *testing.T) {
 	t.Parallel()
 	var p parallelRun
-	var e = errors.New("test wait for error")
-	p.do(context.TODO(), func(ctx context.Context) error {
+	var expect = errors.New("test wait for error")
+	p.do(context.TODO(), "test", func(ctx context.Context) error {
 		<-time.After(time.Millisecond * 5)
-		return e
+		return expect
 	})
-	expect := arrError{e}
-	if err := p.wait(); err.Error() != expect.Error() {
+	if err := p.wait(); errors.Unwrap(err.(arrError)[0]).Error() != expect.Error() {
 		t.Errorf("expected error '%v', got '%v'", expect, err)
 	}
 }

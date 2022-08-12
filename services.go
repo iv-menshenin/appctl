@@ -30,6 +30,9 @@ type (
 		PingTimeout     time.Duration
 		ShutdownTimeout time.Duration
 
+		DetectedProblem func(error) error
+		Recovered       func() error
+
 		stop  chan struct{}
 		state int32
 	}
@@ -58,6 +61,11 @@ func (s *ServiceKeeper) Init(ctx context.Context) error {
 		return err
 	}
 	s.stop = make(chan struct{})
+	s.defaultConfigs()
+	return nil
+}
+
+func (s *ServiceKeeper) defaultConfigs() {
 	if s.PingPeriod == 0 {
 		s.PingPeriod = defaultPingPeriod
 	}
@@ -67,7 +75,16 @@ func (s *ServiceKeeper) Init(ctx context.Context) error {
 	if s.ShutdownTimeout == 0 {
 		s.ShutdownTimeout = defaultShutdownTimeout
 	}
-	return nil
+	if s.DetectedProblem == nil {
+		s.DetectedProblem = func(err error) error {
+			return err
+		}
+	}
+	if s.Recovered == nil {
+		s.Recovered = func() error {
+			return nil
+		}
+	}
 }
 
 func (s *ServiceKeeper) checkState(old, new int32) bool {
@@ -104,9 +121,23 @@ func (s *ServiceKeeper) Watch(ctx context.Context) error {
 		return ErrWrongState
 	}
 	if err := s.cycleTestServices(ctx); err != nil && err != ErrShutdown {
+		return s.detectedProblem(err)
+	}
+	return s.recovered()
+}
+
+func (s *ServiceKeeper) detectedProblem(err error) error {
+	if s.DetectedProblem == nil {
 		return err
 	}
-	return nil
+	return s.DetectedProblem(err)
+}
+
+func (s *ServiceKeeper) recovered() error {
+	if s.Recovered == nil {
+		return nil
+	}
+	return s.Recovered()
 }
 
 func (s *ServiceKeeper) cycleTestServices(ctx context.Context) error {
