@@ -121,9 +121,53 @@ func (s *ServiceKeeper) Watch(ctx context.Context) error {
 		return ErrWrongState
 	}
 	if err := s.cycleTestServices(ctx); err != nil && err != ErrShutdown {
-		return s.detectedProblem(err)
+		return err
 	}
-	return s.recovered()
+	return nil
+}
+
+func (s *ServiceKeeper) cycleTestServices(ctx context.Context) error {
+	var ps = pingState{
+		keeper:     s,
+		errorState: false,
+	}
+	for {
+		select {
+
+		case <-s.stop:
+			return nil
+
+		case <-time.After(s.PingPeriod):
+			if err := ps.ping(ctx); err != nil {
+				return err
+			}
+
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+}
+
+type pingState struct {
+	keeper     *ServiceKeeper
+	errorState bool
+}
+
+func (p *pingState) ping(ctx context.Context) error {
+	err := p.keeper.testServices(ctx)
+	switch {
+
+	case err != nil:
+		p.errorState = true
+		return p.keeper.detectedProblem(err) // intercept problem
+
+	case err == nil && p.errorState:
+		p.errorState = false
+		return p.keeper.recovered() // intercept recover state
+
+	default:
+		return err
+	}
 }
 
 func (s *ServiceKeeper) detectedProblem(err error) error {
@@ -138,21 +182,6 @@ func (s *ServiceKeeper) recovered() error {
 		return nil
 	}
 	return s.Recovered()
-}
-
-func (s *ServiceKeeper) cycleTestServices(ctx context.Context) error {
-	for {
-		select {
-		case <-s.stop:
-			return nil
-		case <-time.After(s.PingPeriod):
-			if err := s.testServices(ctx); err != nil {
-				return err
-			}
-		case <-ctx.Done():
-			return ctx.Err()
-		}
-	}
 }
 
 // Stop sends a signal that monitoring should be stopped. Stops execution of the Watch procedure
