@@ -23,6 +23,7 @@ func ExampleApplication_Run() {
 				return ctx.Err()
 			default:
 				// do something
+				<-time.After(time.Millisecond)
 				return nil
 			}
 		},

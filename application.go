@@ -2,6 +2,7 @@ package appctl
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/signal"
 	"sync"
@@ -19,9 +20,9 @@ type (
 		// Watch is executed in the background, monitors the state of resources.
 		// Exiting this procedure will immediately stop the application.
 		Watch(context.Context) error
-		// Stop signals the Watch procedure to terminate the work
+		// Stop signals the Watch procedure to terminate the work.
 		Stop()
-		// Release releases the resources. Executed just before exiting the Application.Run
+		// Release releases the resources. Executed just before exiting the Application.Run.
 		Release() error
 	}
 	Application struct {
@@ -79,7 +80,7 @@ func (a *Application) Run() error {
 		if a.Resources != nil {
 			go a.watchResources(servicesRunning)
 		}
-		sig := make(chan os.Signal, 1)
+		sig := make(chan os.Signal, 5)
 		signal.Notify(sig, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 		// main thread execution
 		a.setError(a.run(sig))
@@ -118,12 +119,12 @@ func (a *Application) watchResources(servicesRunning chan<- struct{}) {
 	defer close(servicesRunning)
 	// if the stop is due to the correct stop of services without any error,
 	// we still have to stop the application
-	defer a.Shutdown()
+	defer a.Close()
 	a.setError(a.Resources.Watch(a))
 }
 
 func (a *Application) run(sig <-chan os.Signal) error {
-	defer a.Shutdown()
+	defer a.Close()
 	var errRun = make(chan error, 1)
 	go func() {
 		defer close(errRun)
@@ -137,9 +138,9 @@ func (a *Application) run(sig <-chan os.Signal) error {
 		select {
 		// wait for os signal
 		case <-sig:
-			a.Halt()
+			a.Shutdown()
 			// In this mode, the main thread should stop accepting new requests, terminate all current requests, and exit.
-			// Exiting the procedure of the main thread will lead to an implicit call Shutdown(),
+			// Exiting the procedure of the main thread will lead to an implicit call Close(),
 			// if this does not happen, we will make an explicit call through the shutdown timeout
 			select {
 			case <-time.After(a.TerminationTimeout):
@@ -167,19 +168,20 @@ func (a *Application) run(sig <-chan os.Signal) error {
 	return nil
 }
 
-// Halt signals the application to terminate the current computational processes and prepare to stop the application.
-func (a *Application) Halt() {
+// Shutdown signals the application to terminate the current computational processes and prepare to stop the application.
+func (a *Application) Shutdown() {
 	if a.checkState(appStateRunning, appStateHalt) {
 		close(a.halt)
 	}
 }
 
-// Shutdown stops the application immediately. At this point, all calculations should be completed.
-func (a *Application) Shutdown() {
-	a.Halt()
+// Close stops the application immediately. At this point, all calculations should be completed.
+func (a *Application) Close() error {
+	a.Shutdown()
 	if a.checkState(appStateHalt, appStateShutdown) {
 		close(a.done)
 	}
+	return a.Err()
 }
 
 // Deadline returns the time when work done on behalf of this context should be canceled.
@@ -225,12 +227,15 @@ func (a *Application) setError(err error) {
 	if err == nil {
 		return
 	}
+	if errors.Is(err, ErrShutdown) {
+		return
+	}
 	a.mux.Lock()
 	if a.err == nil {
 		a.err = err
 	}
 	a.mux.Unlock()
-	a.Shutdown()
+	a.Close()
 }
 
 func (a *Application) checkState(old, new int32) bool {

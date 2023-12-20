@@ -139,7 +139,7 @@ func TestApplication_Halt(t *testing.T) {
 			done:     make(chan struct{}),
 			appState: appStateRunning,
 		}
-		a.Halt()
+		a.Shutdown()
 		select {
 		case <-a.done:
 			t.Error("the done chan is closed")
@@ -174,7 +174,7 @@ func TestApplication_Halt(t *testing.T) {
 		}
 		for i := range apps {
 			a := apps[i]
-			a.Halt()
+			a.Shutdown()
 			select {
 			case <-a.done:
 				t.Error("the done chan is closed")
@@ -324,7 +324,7 @@ func TestApplication_Shutdown(t *testing.T) {
 				MainFunc: func(ctx context.Context, halt <-chan struct{}) error {
 					go func() {
 						<-time.After(time.Millisecond * 5)
-						ctx.Value(AppContext{}).(*Application).Halt()
+						ctx.Value(AppContext{}).(*Application).Shutdown()
 					}()
 					<-halt
 					return nil
@@ -339,7 +339,7 @@ func TestApplication_Shutdown(t *testing.T) {
 				MainFunc: func(ctx context.Context, halt <-chan struct{}) error {
 					go func() {
 						<-time.After(time.Millisecond * 5)
-						ctx.Value(AppContext{}).(*Application).Shutdown()
+						ctx.Value(AppContext{}).(*Application).Close()
 					}()
 					<-halt
 					return nil
@@ -374,7 +374,7 @@ func TestApplication_Shutdown(t *testing.T) {
 				return nil
 			},
 		}
-		a.Shutdown()
+		a.Close()
 		if result {
 			t.Error("no any action expected")
 		}
@@ -400,7 +400,7 @@ func TestApplication_Shutdown(t *testing.T) {
 				return nil
 			},
 		}
-		a.Shutdown()
+		a.Close()
 		if result {
 			t.Error("no any action expected")
 		}

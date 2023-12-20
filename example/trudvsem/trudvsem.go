@@ -67,7 +67,6 @@ type (
 )
 
 func (t *trudVsem) Init(context.Context) error {
-	rand.Seed(time.Now().UnixNano())
 	t.client = http.DefaultClient
 	t.vacancies = make([]VacancyRender, 0, prefetchCount)
 	return nil

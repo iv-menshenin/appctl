@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -57,7 +58,7 @@ func (s *server) appStart(ctx context.Context, halt <-chan struct{}) error {
 			errShutdown <- err
 		}
 	}()
-	if err := httpServer.ListenAndServe(); err != http.ErrServerClosed {
+	if err := httpServer.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
 	err, ok := <-errShutdown

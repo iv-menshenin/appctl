@@ -2,6 +2,9 @@ package appctl
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -25,16 +28,29 @@ type (
 		Ident() string
 	}
 	ServiceKeeper struct {
-		Services        []Service
-		PingPeriod      time.Duration
-		PingTimeout     time.Duration
+		// Services contains a slice of services that need to be watched.
+		Services []Service
+		// PingPeriod allows you to configure the interval for polling for health. Default = 15 second.
+		PingPeriod time.Duration
+		// PingTimeout limits the time for which the service must respond to Ping execution. Default = 5 second.
+		PingTimeout time.Duration
+		// ShutdownTimeout limits the time in which all services must have time to release resources. Default = minute.
 		ShutdownTimeout time.Duration
+		// SyncStopWatch synchronizes the Stop and Watch methods. If this parameter is set to `true`,
+		// the resource release process is started only after Watch finishes its work.
+		SyncStopWatch bool
 
+		// DetectedProblem intercepts errors that have occurred and can silence them in some cases.
 		DetectedProblem func(error) error
-		Recovered       func() error
+		// Recovered indicates that the problem that occurred earlier has been resolved.
+		// This means that repeated pings no longer cause errors.
+		Recovered func() error
 
 		stop  chan struct{}
+		done  chan struct{}
 		state int32
+		mux   sync.Mutex
+		err   error
 	}
 )
 
@@ -45,9 +61,9 @@ const (
 	srvStateShutdown
 	srvStateOff
 
-	defaultPingPeriod      = time.Second * 5
-	defaultPingTimeout     = time.Millisecond * 1500
-	defaultShutdownTimeout = time.Millisecond * 15000
+	defaultPingPeriod      = 15 * time.Second
+	defaultPingTimeout     = 5 * time.Second
+	defaultShutdownTimeout = time.Minute
 )
 
 // Init will initialize all registered services. Will return an error if at least one of the initialization functions
@@ -61,6 +77,7 @@ func (s *ServiceKeeper) Init(ctx context.Context) error {
 		return err
 	}
 	s.stop = make(chan struct{})
+	s.done = make(chan struct{})
 	s.defaultConfigs()
 	return nil
 }
@@ -92,13 +109,19 @@ func (s *ServiceKeeper) checkState(old, new int32) bool {
 }
 
 func (s *ServiceKeeper) initAllServices(ctx context.Context) (initError error) {
-	initCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	var p parallelRun
 	for i := range s.Services {
-		p.do(initCtx, s.Services[i].Ident(), s.Services[i].Init)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+
+		default:
+			err := s.Services[i].Init(ctx)
+			if err != nil {
+				return fmt.Errorf("error while %q initialization: %w", s.Services[i].Ident(), err)
+			}
+		}
 	}
-	return p.wait()
+	return nil
 }
 
 func (s *ServiceKeeper) testServices(ctx context.Context) error {
@@ -117,10 +140,11 @@ func (s *ServiceKeeper) testServices(ctx context.Context) error {
 //
 // This procedure is synchronous, which means that control of the routine will be returned only when service monitoring is interrupted.
 func (s *ServiceKeeper) Watch(ctx context.Context) error {
+	defer close(s.done)
 	if !s.checkState(srvStateReady, srvStateRunning) {
 		return ErrWrongState
 	}
-	if err := s.cycleTestServices(ctx); err != nil && err != ErrShutdown {
+	if err := s.cycleTestServices(ctx); err != nil && !errors.Is(err, ErrShutdown) {
 		return err
 	}
 	return nil
@@ -131,21 +155,40 @@ func (s *ServiceKeeper) cycleTestServices(ctx context.Context) error {
 		keeper:     s,
 		errorState: false,
 	}
+	var cs = time.NewTicker(s.PingPeriod)
+	defer cs.Stop()
 	for {
 		select {
 
 		case <-s.stop:
 			return nil
 
-		case <-time.After(s.PingPeriod):
-			if err := ps.ping(ctx); err != nil {
+		case <-cs.C:
+			withTimeout, cancel := context.WithTimeout(ctx, s.PingPeriod)
+			if err := ps.ping(withTimeout); err != nil {
+				cancel()
 				return err
 			}
+			cancel()
 
 		case <-ctx.Done():
 			return ctx.Err()
 		}
 	}
+}
+
+func (s *ServiceKeeper) setErr(err error) {
+	if err == nil {
+		return
+	}
+	if errors.Is(err, ErrShutdown) {
+		return
+	}
+	s.mux.Lock()
+	if s.err == nil {
+		s.err = err
+	}
+	s.mux.Unlock()
 }
 
 type pingState struct {
@@ -189,6 +232,9 @@ func (s *ServiceKeeper) Stop() {
 	if s.checkState(srvStateRunning, srvStateShutdown) {
 		close(s.stop)
 	}
+	if s.SyncStopWatch {
+		<-s.done
+	}
 }
 
 func (s *ServiceKeeper) Release() error {
@@ -199,31 +245,24 @@ func (s *ServiceKeeper) Release() error {
 }
 
 func (s *ServiceKeeper) release() error {
-	shCtx, cancel := context.WithTimeout(context.Background(), s.ShutdownTimeout)
-	defer cancel()
-	var p parallelRun
-	for i := range s.Services {
-		var service = s.Services[i]
-		p.do(shCtx, service.Ident(), func(_ context.Context) error {
-			return service.Close()
-		})
-	}
-	var errCh = make(chan error)
+	var errs arrError
+	var done = make(chan struct{})
 	go func() {
-		defer close(errCh)
-		if err := p.wait(); err != nil {
-			errCh <- err
+		defer close(done)
+		for i := len(s.Services) - 1; i >= 0; i-- {
+			if err := s.Services[i].Close(); err != nil {
+				errs = append(errs, fmt.Errorf("error while stopping %q service: %w", s.Services[i].Ident(), err))
+			}
 		}
 	}()
-	for {
-		select {
-		case err, ok := <-errCh:
-			if ok {
-				return err
-			}
-			return nil
-		case <-shCtx.Done():
-			return shCtx.Err()
+	select {
+	case <-done:
+		if len(errs) > 0 {
+			return errs
 		}
+		return nil
+
+	case <-time.After(s.ShutdownTimeout):
+		return fmt.Errorf("shutdown timeout exceeded: %v", s.ShutdownTimeout)
 	}
 }
