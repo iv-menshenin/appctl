@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"sync/atomic"
 	"time"
 )
 
@@ -75,16 +76,16 @@ func (s *ServiceWrapper) Ping(ctx context.Context) error {
 	err := s.service.Ping(ctx)
 	if err == nil {
 		s.firstTimeError = time.Time{}
-		s.errorRepeats = 0
+		atomic.StoreInt64(&s.errorRepeats, 0)
 		return nil
 	}
-	s.errorRepeats++
+	errorRepeats := atomic.AddInt64(&s.errorRepeats, 1)
 	if s.firstTimeError.IsZero() {
 		s.firstTimeError = time.Now()
 	}
 	s.log("service ping: %s", err)
 	timeDelayed := s.options.RestoringThreshold > 0 && time.Since(s.firstTimeError) <= s.options.RestoringThreshold
-	countDelayed := s.options.MaxErrorRepeats > 0 && s.errorRepeats <= s.options.MaxErrorRepeats
+	countDelayed := s.options.MaxErrorRepeats > 0 && errorRepeats <= s.options.MaxErrorRepeats
 	if timeDelayed || countDelayed {
 		s.log("error skipped")
 		return nil
@@ -105,4 +106,8 @@ func (s *ServiceWrapper) Close() error {
 
 func (s *ServiceWrapper) Ident() string {
 	return s.service.Ident()
+}
+
+func (s *ServiceWrapper) Health() bool {
+	return atomic.LoadInt64(&s.errorRepeats) == 0
 }
