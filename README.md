@@ -1,6 +1,6 @@
 # Application Controller
 
-This is the code of the runtime controller, which is described in the article at [habr](https://habr.com/ru/post/586568/)  
+This is the code of the runtime controller, which is described in the article at [habr](https://habr.com/ru/companies/timeweb/articles/589167/)
 The repository also contains a sample application using this controller.
 
 ## What kind of creature is that?
@@ -14,7 +14,7 @@ func main(){
     go func() {
         // ... do something ...
     }()
-    <-sigc	
+    <-sigc
 }
 ```
 
@@ -23,8 +23,8 @@ However, it can become more complicated than just a `signal.Notify` call due to 
 
 What if one of your external services breaks down? Should you stop if it can't operate and can't restore its connection?
 You must decide how to handle an abnormal termination signal and how to stop processes that are running in the background.
-You need to deal with a lot of complexities every time you try to write service code that will manage the execution time 
-of your program. Ensuring that the necessary services are not stopped while the requests being processed at the moment 
+You need to deal with a lot of complexities every time you try to write service code that will manage the execution time
+of your program. Ensuring that the necessary services are not stopped while the requests being processed at the moment
 are not completed. This is called "graceful shutdown". In addition, it is necessary to constantly check the operability
 of these services, for example, periodically polling them with the help of `Ping`.
 
@@ -62,7 +62,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 }
 ```
 
-Let's examine what this example consists of. When you run `Application.Run`, the `Application` performs the function that 
+Let's examine what this example consists of. When you run `Application.Run`, the `Application` performs the function that
 was passed to the `MainFunc` field, and if `MainFunc` completes its work, the application stops completely.
 That is the main concept. However, what about graceful shutdown? When you send a signal to your program to stop working,
 the `Application` receives this signal and executes the command `Server.Shutdown` (for this particular example),
@@ -90,7 +90,7 @@ So, let's figure out how this works. Let's understand what happens after you lau
 First of all, resource initialization occurs, i.e. the `Application.Resources.Init` method is simply launched.
 A certain amount of time is allocated for this process, and if the initialization is not successfully completed within
 the time specified by the `InitializationTimeout` option, the `Application.Run` method will return an error.
-To be precise, the initialization process is not limited in itself - in fact, the time is controlled by the 
+To be precise, the initialization process is not limited in itself - in fact, the time is controlled by the
 `Application.Resources.Init` method, which receives the `context.Context` with a set deadline as an argument.
 
 Of course, all of the above only happens if you have filled in the `Resources` field. Otherwise, initialization is
@@ -103,7 +103,7 @@ If the Resources field was set and initialization was performed at the previous 
 the state of resources is controlled during the execution of the current stage.
 What this actually means is that a single execution of `Application.Resources.Watch` is started in parallel with
 the execution of `MainFunc`, and if this method terminates, the application will be terminated.
-The third condition for terminating the program is the receipt of one of the following signals from 
+The third condition for terminating the program is the receipt of one of the following signals from
 the operating system: SIGHUP, SIGINT, SIGTERM, or SIGQUIT.
 
 Digging deeper, it becomes clear that the three termination paths I mentioned are not identical,
@@ -332,7 +332,7 @@ var svc = appctl.ServiceKeeper{
 Let's take a look at an example.
 Using the `WrapService` function, I have configured the service to be insensitive to failures that last less than a minute.
 Due to the `RestoringThreshold` setting, service pings will not return any error in `ServiceKeeper` for a minute,
-if serviceability is restored during this time, it will be as if nothing happened. 
+if serviceability is restored during this time, it will be as if nothing happened.
 And only if the problem persists for more than a minute, an escalation will occur.
 
 The `InitializationThreshold` setting allows you to do the same thing with service initialization.
